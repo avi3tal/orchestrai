@@ -297,3 +297,80 @@ func TestBranchGraphExecution(t *testing.T) {
 	assert.True(t, result.Done)
 	assert.Equal(t, []int{0, 1, 2}, result.Numbers) // Should process 3 times
 }
+
+type IntState struct {
+	Value int
+}
+
+func (s IntState) Validate() error {
+	return nil
+}
+
+func (s IntState) Merge(st IntState) IntState {
+	return IntState{
+		Value: st.Value,
+	}
+}
+
+// Test adding nodes to the graph
+func TestAddNode(t *testing.T) {
+	graph := NewGraph[IntState]()
+
+	// Add valid node
+	err := graph.AddNode("node1", func(ctx context.Context, state IntState, config Config[IntState]) (NodeResponse[IntState], error) {
+		state.Value += 1
+		return NodeResponse[IntState]{State: state, Status: StatusCompleted}, nil
+	}, nil)
+	assert.NoError(t, err)
+
+	// Try adding duplicate node
+	err = graph.AddNode("node1", nil, nil)
+	assert.Error(t, err)
+}
+
+// Test adding edges to the graph
+func TestAddEdge(t *testing.T) {
+	graph := NewGraph[IntState]()
+	_ = graph.AddNode("node1", nil, nil)
+	_ = graph.AddNode("node2", nil, nil)
+
+	// Add valid edge
+	err := graph.AddEdge("node1", "node2", nil)
+	assert.NoError(t, err)
+
+	// Add edge with missing nodes
+	err = graph.AddEdge("node1", "node3", nil)
+	assert.Error(t, err)
+}
+
+type TestState struct {
+	Value int
+}
+
+func (s TestState) Validate() error {
+	if s.Value < 0 {
+		return fmt.Errorf("value cannot be negative")
+	}
+	return nil
+}
+
+func (s TestState) Merge(other TestState) TestState {
+	return TestState{Value: s.Value + other.Value}
+}
+
+// Test state validation
+func TestStateValidation(t *testing.T) {
+	state := TestState{Value: 5}
+	assert.NoError(t, state.Validate())
+
+	invalidState := TestState{Value: -1}
+	assert.Error(t, invalidState.Validate())
+}
+
+// Test state merging
+func TestStateMerge(t *testing.T) {
+	state1 := TestState{Value: 5}
+	state2 := TestState{Value: 3}
+	mergedState := state1.Merge(state2)
+	assert.Equal(t, 8, mergedState.Value)
+}

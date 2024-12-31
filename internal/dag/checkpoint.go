@@ -11,6 +11,7 @@ type CheckpointData[T GraphState[T]] struct {
 	State       T
 	Status      NodeExecutionStatus
 	CurrentNode string
+	Steps       int
 }
 
 // MemoryCheckpointer is a simple in-memory implementation of Checkpointer

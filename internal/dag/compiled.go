@@ -38,7 +38,7 @@ func (g *Graph[T]) Compile(config Config[T]) (*CompiledGraph[T], error) {
 	}, nil
 }
 
-func (cg *CompiledGraph[T]) saveCheckpoint(ctx context.Context, state T, node string, status NodeExecutionStatus) error {
+func (cg *CompiledGraph[T]) saveCheckpoint(ctx context.Context, state T, node string, status NodeExecutionStatus, steps int) error {
 	if cg.config.Checkpointer == nil {
 		return nil
 	}
@@ -47,6 +47,7 @@ func (cg *CompiledGraph[T]) saveCheckpoint(ctx context.Context, state T, node st
 		State:       state,
 		CurrentNode: node,
 		Status:      status,
+		Steps:       steps,
 	}
 	return cg.config.Checkpointer.Save(ctx, cg.config, data)
 }
@@ -56,16 +57,18 @@ func (cg *CompiledGraph[T]) loadOrInitCheckpoint(ctx context.Context, initialSta
 		State:       initialState,
 		CurrentNode: cg.graph.entryPoint,
 		Status:      StatusReady,
+		Steps:       0,
 	}
+
 	if cg.config.Checkpointer == nil {
 		return data
 	}
 
+	// Load the last checkpoint if available
 	if checkpoint, err := cg.config.Checkpointer.Load(ctx, cg.config); err == nil {
+		data.CurrentNode = checkpoint.CurrentNode
 		data.State = checkpoint.State.Merge(initialState)
-		if checkpoint.Status == StatusPending {
-			data.CurrentNode = checkpoint.CurrentNode
-		}
+		data.Steps = checkpoint.Steps
 	}
 
 	return data
@@ -78,11 +81,11 @@ func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T) (T, error) 
 		defer cancel()
 	}
 
-	// Load or initialize state
-	initialCheckpoint := cg.loadOrInitCheckpoint(ctx, initialState)
-	currentNode := initialCheckpoint.CurrentNode
-	state := initialCheckpoint.State
-	steps := 0 // Track execution steps
+	// Load or initialize the state and checkpoint
+	checkpoint := cg.loadOrInitCheckpoint(ctx, initialState)
+	currentNode := checkpoint.CurrentNode
+	state := checkpoint.State
+	steps := checkpoint.Steps
 	var nextInfo *NextNodeInfo[T]
 
 	for currentNode != END {
@@ -115,26 +118,26 @@ func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T) (T, error) 
 			return state, fmt.Errorf("node %s not found", currentNode)
 		}
 
-		var err error
-
+		// Execute the current node
 		resp, err := cg.executeNode(ctx, node, state)
-		if err != nil || resp.Status == StatusFailed {
-			return state, fmt.Errorf("executing node %s failed. error: %w", currentNode, err)
+		if err != nil {
+			return state, err
 		}
 
 		// Merge the response state with the current state
 		state = state.Merge(resp.State)
 
 		// Save the checkpoint after executing the node
-		if err = cg.saveCheckpoint(ctx, state, currentNode, resp.Status); err != nil {
+		if err = cg.saveCheckpoint(ctx, state, currentNode, resp.Status, steps); err != nil {
 			return state, err
 		}
 
 		// If the node is pending, return the current state and the pending error
 		if resp.Status == StatusPending {
-			return state, &PendingExecutionError{NodeID: currentNode}
+			return state, nil
 		}
 
+		// Determine the next node
 		nextNode, err := cg.getNextNode(ctx, currentNode, state)
 		if err != nil {
 			return state, err
