@@ -1,4 +1,3 @@
-// channels.go
 package dag
 
 import (

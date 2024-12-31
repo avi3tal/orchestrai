@@ -3,6 +3,7 @@ module github.com/avi3tal/orchestrai
 go 1.23
 
 require (
+	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0
 	github.com/tmc/langchaingo v0.1.12
 )

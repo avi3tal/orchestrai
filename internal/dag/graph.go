@@ -3,20 +3,13 @@ package dag
 import (
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 )
-
-// DirectCondition creates a condition for direct edges
-func DirectCondition[T State](target string) Condition[T] {
-	return Condition[T]{
-		Func:            func(_ context.Context, _ T, _ Config[T]) string { return target },
-		PossibleTargets: []string{target},
-	}
-}
 
 // Graph represents the base graph structure
 type Graph[T State] struct {
 	nodes    map[string]NodeSpec[T]
-	edges    []Edge[T]
+	edges    []Edge
 	branches map[string][]Branch[T]
 	channels map[string]Channel[T]
 
@@ -62,9 +55,9 @@ func (g *Graph[T]) AddEdge(from, to string, metadata map[string]any) error {
 		return err
 	}
 
-	g.edges = append(g.edges, Edge[T]{
+	g.edges = append(g.edges, Edge{
 		From:     from,
-		To:       DirectCondition[T](to),
+		To:       to,
 		Metadata: metadata,
 	})
 
@@ -132,35 +125,32 @@ func (g *Graph[T]) AddChannel(name string, channelType ChannelType, options ...a
 
 // AddConditionalEdge adds a conditional edge to the graph
 func (g *Graph[T]) AddConditionalEdge(from string, possibleTargets []string, condition func(context.Context, T, Config[T]) string, metadata map[string]any) error {
-	if g.compiled {
-		return fmt.Errorf("cannot add conditional edge to compiled graph")
-	}
-
+	// Validate nodes first
 	if err := g.validateEdgeNodes(from, possibleTargets); err != nil {
 		return err
 	}
 
-	wrapper := func(ctx context.Context, state T, cfg Config[T]) string {
-		next := condition(ctx, state, cfg)
-		// Validate the returned value is one of the possible targets
-		for _, target := range possibleTargets {
-			if target == next {
-				return next
-			}
+	for _, target := range possibleTargets {
+		if err := g.AddEdge(from, target, metadata); err != nil {
+			return errors.Wrapf(err, "failed to add conditional edge target %s", target)
 		}
-		panic(fmt.Sprintf("invalid target %s returned from condition. Must be one of: %v", next, possibleTargets))
 	}
 
-	g.edges = append(g.edges, Edge[T]{
-		From: from,
-		To: Condition[T]{
-			Func:            wrapper,
-			PossibleTargets: possibleTargets,
+	// Create branch with validated condition
+	return g.AddBranch(from,
+		func(ctx context.Context, state T, cfg Config[T]) string {
+			next := condition(ctx, state, cfg)
+			// Validate target is allowed
+			for _, target := range possibleTargets {
+				if target == next {
+					return next
+				}
+			}
+			return ""
 		},
-		Metadata: metadata,
-	})
-
-	return nil
+		"", // No then node
+		metadata,
+	)
 }
 
 // validateEdgeNodes validates source and target nodes
@@ -251,15 +241,13 @@ func (g *Graph[T]) hasPathToEnd(node string, unvisited map[string]bool) bool {
 
 	for _, edge := range g.edges {
 		if edge.From == node {
-			for _, target := range edge.To.PossibleTargets {
-				if target == END {
-					hasPath = true
-					break
-				}
-				if g.hasPathToEnd(target, unvisited) {
-					hasPath = true
-					break
-				}
+			if edge.To == END {
+				hasPath = true
+				break
+			}
+			if g.hasPathToEnd(edge.To, unvisited) {
+				hasPath = true
+				break
 			}
 		}
 	}

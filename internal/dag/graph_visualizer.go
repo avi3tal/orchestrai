@@ -1,4 +1,3 @@
-// graph_visualizer.go
 package dag
 
 import (
@@ -12,13 +11,14 @@ type GraphInfo struct {
 	Edges []EdgeInfo
 }
 
+// EdgeInfo GraphInfo can stay the same but Edge info becomes simpler
 type EdgeInfo struct {
-	From          string
-	Targets       []string
-	IsConditional bool
+	From     string
+	To       string
+	Type     string // "direct", "branch", or "conditional"
+	Metadata map[string]any
 }
 
-// GetGraphInfo returns a representation of the graph structure
 func (g *Graph[T]) GetGraphInfo() *GraphInfo {
 	info := &GraphInfo{
 		Nodes: make([]string, 0, len(g.nodes)),
@@ -29,25 +29,59 @@ func (g *Graph[T]) GetGraphInfo() *GraphInfo {
 		info.Nodes = append(info.Nodes, nodeName)
 	}
 
-	// Add edges
+	// Add regular edges
 	for _, edge := range g.edges {
 		info.Edges = append(info.Edges, EdgeInfo{
-			From:          edge.From,
-			Targets:       edge.To.PossibleTargets,
-			IsConditional: len(edge.To.PossibleTargets) > 1,
+			From:     edge.From,
+			To:       edge.To,
+			Type:     "direct",
+			Metadata: edge.Metadata,
 		})
+	}
+
+	// Add branch edges - showing conditional routing
+	for source, branches := range g.branches {
+		// Find all possible targets from edges for this source
+		targets := make([]string, 0)
+		for _, edge := range g.edges {
+			if edge.From == source {
+				targets = append(targets, edge.To)
+			}
+		}
+
+		// Add conditional routing edge
+		if len(targets) > 0 {
+			info.Edges = append(info.Edges, EdgeInfo{
+				From:     source,
+				To:       strings.Join(targets, ","),
+				Type:     "conditional",
+				Metadata: branches[0].Metadata, // Using first branch metadata
+			})
+		}
+
+		// Add then edges if present
+		for _, branch := range branches {
+			if branch.Then != "" {
+				info.Edges = append(info.Edges, EdgeInfo{
+					From:     source,
+					To:       branch.Then,
+					Type:     "branch",
+					Metadata: branch.Metadata,
+				})
+			}
+		}
 	}
 
 	return info
 }
 
-// PrintGraph prints a simple text representation of the graph
 func (g *Graph[T]) PrintGraph() {
 	info := g.GetGraphInfo()
 
 	fmt.Println("Graph Structure:")
-	fmt.Println("Entry Point:", g.entryPoint)
-	fmt.Println("\nNodes:")
+	fmt.Printf("Entry Point: %s\n\n", g.entryPoint)
+
+	fmt.Println("Nodes:")
 	for _, node := range info.Nodes {
 		if node == g.entryPoint {
 			fmt.Printf("  * %s (Entry)\n", node)
@@ -58,10 +92,13 @@ func (g *Graph[T]) PrintGraph() {
 
 	fmt.Println("\nEdges:")
 	for _, edge := range info.Edges {
-		if edge.IsConditional {
-			fmt.Printf("  %s --[conditional]--> %s\n", edge.From, strings.Join(edge.Targets, " or "))
-		} else {
-			fmt.Printf("  %s --> %s\n", edge.From, edge.Targets[0])
+		switch edge.Type {
+		case "direct":
+			fmt.Printf("  %s --> %s\n", edge.From, edge.To)
+		case "conditional":
+			fmt.Printf("  %s --[condition]--> [%s]\n", edge.From, edge.To)
+		case "branch":
+			fmt.Printf("  %s ==then==> %s\n", edge.From, edge.To)
 		}
 	}
 }

@@ -124,7 +124,7 @@ func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T) (T, error) 
 		if nextNode == "" {
 			for _, edge := range cg.graph.edges {
 				if edge.From == currentNode {
-					nextNode = edge.To.Func(ctx, state, cg.config)
+					nextNode = edge.To
 					break
 				}
 			}

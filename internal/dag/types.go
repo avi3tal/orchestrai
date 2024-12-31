@@ -50,16 +50,10 @@ type RetryPolicy struct {
 	Delay       int // delay in seconds between attempts
 }
 
-// Condition represents a routing condition with its possible targets
-type Condition[T State] struct {
-	Func            func(context.Context, T, Config[T]) string
-	PossibleTargets []string
-}
-
 // Edge represents a connection between nodes
-type Edge[T State] struct {
+type Edge struct {
 	From     string
-	To       Condition[T]
+	To       string
 	Metadata map[string]any
 }
 
