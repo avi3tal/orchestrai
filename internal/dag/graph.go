@@ -7,7 +7,7 @@ import (
 )
 
 // Graph represents the base graph structure
-type Graph[T State] struct {
+type Graph[T GraphState[T]] struct {
 	nodes    map[string]NodeSpec[T]
 	edges    []Edge
 	branches map[string][]Branch[T]
@@ -18,7 +18,7 @@ type Graph[T State] struct {
 }
 
 // NewGraph creates a new graph instance
-func NewGraph[T State]() *Graph[T] {
+func NewGraph[T GraphState[T]]() *Graph[T] {
 	return &Graph[T]{
 		nodes:    make(map[string]NodeSpec[T]),
 		branches: make(map[string][]Branch[T]),
@@ -27,7 +27,7 @@ func NewGraph[T State]() *Graph[T] {
 }
 
 // AddNode adds a new node to the graph
-func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, Config[T]) (T, error), metadata map[string]any) error {
+func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, Config[T]) (NodeResponse[T], error), metadata map[string]any) error {
 	if g.compiled {
 		return fmt.Errorf("cannot add node to compiled graph")
 	}

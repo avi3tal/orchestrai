@@ -19,10 +19,20 @@ func (m MessagesState) Validate() error {
 	return nil
 }
 
-func AddAIMessage(text string) func(context.Context, MessagesState, dag.Config[MessagesState]) (MessagesState, error) {
-	return func(_ context.Context, state MessagesState, c dag.Config[MessagesState]) (MessagesState, error) {
-		state.Messages = append(state.Messages, llms.TextParts(llms.ChatMessageTypeAI, text))
-		return state, nil
+func (m MessagesState) Merge(other MessagesState) MessagesState {
+	return MessagesState{
+		Messages: append(m.Messages, other.Messages...),
+	}
+}
+
+func AddAIMessage(text string) func(context.Context, MessagesState, dag.Config[MessagesState]) (dag.NodeResponse[MessagesState], error) {
+	return func(_ context.Context, state MessagesState, c dag.Config[MessagesState]) (dag.NodeResponse[MessagesState], error) {
+		ms := MessagesState{
+			Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, text)},
+		}
+		return dag.NodeResponse[MessagesState]{
+			State: ms,
+		}, nil
 	}
 }
 

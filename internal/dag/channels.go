@@ -15,17 +15,17 @@ const (
 )
 
 // BaseChannel provides common channel functionality
-type BaseChannel[T State] struct {
+type BaseChannel[T GraphState[T]] struct {
 	mu    sync.RWMutex
 	state T
 }
 
 // LastValue is a channel that only keeps the most recent state
-type LastValue[T State] struct {
+type LastValue[T GraphState[T]] struct {
 	BaseChannel[T]
 }
 
-func NewLastValue[T State]() *LastValue[T] {
+func NewLastValue[T GraphState[T]]() *LastValue[T] {
 	return &LastValue[T]{}
 }
 
@@ -43,12 +43,12 @@ func (l *LastValue[T]) Write(ctx context.Context, value T, config Config[T]) err
 }
 
 // BarrierChannel waits for all required inputs before allowing reads
-type BarrierChannel[T State] struct {
+type BarrierChannel[T GraphState[T]] struct {
 	BaseChannel[T]
 	inputs map[string]*T // Track inputs from each source
 }
 
-func NewBarrierChannel[T State](required []string) *BarrierChannel[T] {
+func NewBarrierChannel[T GraphState[T]](required []string) *BarrierChannel[T] {
 	inputs := make(map[string]*T, len(required))
 	for _, r := range required {
 		inputs[r] = nil
