@@ -78,7 +78,7 @@ func ApprovalNode(ctx context.Context, state MessagesState, c dag.Config[Message
 }
 
 func main() {
-	g := dag.NewGraph[MessagesState]()
+	g := dag.NewGraph[MessagesState]("pending-agent")
 
 	// Add nodes
 	_ = g.AddNode("StartNode", AddAIMessage("Hello, running actions"), nil)
@@ -90,16 +90,12 @@ func main() {
 
 	g.PrintGraph()
 
-	// Compile the graph
-	config := dag.Config[MessagesState]{
-		ThreadID:     "thread-1",
-		MaxSteps:     100,
-		Timeout:      30,
-		Debug:        true,
-		Checkpointer: dag.NewMemoryCheckpointer[MessagesState](),
-	}
-
-	compiled, err := g.Compile(config)
+	compiled, err := g.Compile(
+		dag.WithDebug[MessagesState](),
+		dag.WithCheckpointStore(dag.NewMemoryStore[MessagesState]()),
+		dag.WithTimeout[MessagesState](30),
+		dag.WithMaxSteps[MessagesState](100),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -109,7 +105,7 @@ func main() {
 	}
 
 	// First run
-	pendingState, err := compiled.Run(context.Background(), initialState)
+	pendingState, err := compiled.Run(context.Background(), initialState, dag.WithThreadID[MessagesState]("thread-1"))
 	if err != nil {
 		panic(err)
 	}
@@ -122,7 +118,7 @@ func main() {
 	resumeState := MessagesState{
 		Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeHuman, "Approved message")},
 	}
-	finalState, err := compiled.Run(context.Background(), resumeState)
+	finalState, err := compiled.Run(context.Background(), resumeState, dag.WithThreadID[MessagesState]("thread-1"))
 	if err != nil {
 		panic(err)
 	}

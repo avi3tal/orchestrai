@@ -2,8 +2,7 @@ package dag
 
 import (
 	"context"
-	"fmt"
-	"sync"
+	"time"
 )
 
 // CheckpointData Extended checkpoint data
@@ -14,34 +13,54 @@ type CheckpointData[T GraphState[T]] struct {
 	Steps       int
 }
 
-// MemoryCheckpointer is a simple in-memory implementation of Checkpointer
-type MemoryCheckpointer[T GraphState[T]] struct {
-	checkpoints map[string]*CheckpointData[T]
-	mu          sync.RWMutex
+// StateCheckpointer manages execution state persistence
+type StateCheckpointer[T GraphState[T]] struct {
+	store CheckpointStore[T]
 }
 
-// NewMemoryCheckpointer creates a new memory checkpointer
-func NewMemoryCheckpointer[T GraphState[T]]() *MemoryCheckpointer[T] {
-	return &MemoryCheckpointer[T]{
-		checkpoints: make(map[string]*CheckpointData[T]),
+func NewStateCheckpointer[T GraphState[T]](store CheckpointStore[T]) *StateCheckpointer[T] {
+	return &StateCheckpointer[T]{
+		store: store,
 	}
 }
 
-func (m *MemoryCheckpointer[T]) Save(ctx context.Context, config Config[T], data *CheckpointData[T]) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (sc *StateCheckpointer[T]) Save(ctx context.Context, config Config[T], data *CheckpointData[T]) error {
+	key := CheckpointKey{
+		GraphID:  config.GraphID,
+		ThreadID: config.ThreadID,
+	}
 
-	m.checkpoints[config.ThreadID] = data
-	return nil
+	cp := Checkpoint[T]{
+		Key: key,
+		Meta: CheckpointMeta{
+			CreatedAt: time.Now(),
+			Steps:     data.Steps,
+			Status:    data.Status,
+		},
+		State:  data.State,
+		NodeID: data.CurrentNode,
+	}
+
+	return sc.store.Save(ctx, cp)
 }
 
-func (m *MemoryCheckpointer[T]) Load(ctx context.Context, config Config[T]) (*CheckpointData[T], error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	cp, exists := m.checkpoints[config.ThreadID]
-	if !exists {
-		return nil, fmt.Errorf("no chckpoint found for thread %s", config.ThreadID)
+func (sc *StateCheckpointer[T]) Load(ctx context.Context, config Config[T]) (*CheckpointData[T], error) {
+	key := CheckpointKey{
+		GraphID:  config.GraphID,
+		ThreadID: config.ThreadID,
 	}
-	return cp, nil
+
+	cp, err := sc.store.Load(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	data := &CheckpointData[T]{
+		State:       cp.State,
+		CurrentNode: cp.NodeID,
+		Status:      cp.Meta.Status,
+		Steps:       cp.Meta.Steps,
+	}
+
+	return data, nil
 }

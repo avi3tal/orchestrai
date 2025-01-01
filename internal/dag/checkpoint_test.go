@@ -10,7 +10,7 @@ import (
 )
 
 func TestMemoryCheckpointer(t *testing.T) {
-	checkpointer := NewMemoryCheckpointer[TestState]()
+	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 
 	ctx := context.Background()
 	config := Config[TestState]{ThreadID: "thread-1"}
@@ -31,14 +31,15 @@ func TestMemoryCheckpointer(t *testing.T) {
 }
 
 func TestMemoryCheckpointerEdgeCases(t *testing.T) {
-	checkpointer := NewMemoryCheckpointer[TestState]()
+	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 	ctx := context.Background()
 
 	// Test loading nonexistent checkpoint
 	config1 := Config[TestState]{ThreadID: "thread-1"}
 	_, err := checkpointer.Load(ctx, config1)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no chckpoint found for thread thread-1")
+	assert.Contains(t, err.Error(), "thread-1")
+	assert.Contains(t, err.Error(), "checkpoint not found")
 
 	// Test overwriting checkpoints
 	data1 := &CheckpointData[TestState]{
@@ -116,8 +117,7 @@ func (m *MockCheckpointStore) Load(ctx context.Context, threadID string) (*Check
 }
 
 func TestStateCheckpointer(t *testing.T) {
-	mockStore := NewMockCheckpointStore()
-	checkpointer := NewStateCheckpointer[TestState](mockStore)
+	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 	ctx := context.Background()
 
 	// Test saving and loading checkpoints
@@ -141,5 +141,6 @@ func TestStateCheckpointer(t *testing.T) {
 	nonexistentConfig := Config[TestState]{ThreadID: "thread-2"}
 	_, err = checkpointer.Load(ctx, nonexistentConfig)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no checkpoint found for thread thread-2")
+	assert.Contains(t, err.Error(), "thread-2")
+	assert.Contains(t, err.Error(), "checkpoint not found")
 }

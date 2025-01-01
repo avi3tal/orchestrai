@@ -8,6 +8,22 @@ import (
 
 const DefaultMaxRetries = 1
 
+// NodeExecutionStatus represents the current state of node execution
+type NodeExecutionStatus string
+
+const (
+	StatusCompleted NodeExecutionStatus = "completed"
+	StatusPending   NodeExecutionStatus = "pending" // Waiting for user input
+	StatusFailed    NodeExecutionStatus = "failed"
+	StatusReady     NodeExecutionStatus = "ready" // Ready to execute
+)
+
+// NodeResponse encapsulates the execution result
+type NodeResponse[T GraphState[T]] struct {
+	State  T
+	Status NodeExecutionStatus
+}
+
 type NextNode struct {
 	Target string // Next node to execute
 	Then   string // Optional post-processing node
@@ -25,12 +41,14 @@ type CompiledGraph[T GraphState[T]] struct {
 }
 
 // Compile validates and compiles the graph for execution
-func (g *Graph[T]) Compile(config Config[T]) (*CompiledGraph[T], error) {
+func (g *Graph[T]) Compile(opt ...CompilationOption[T]) (*CompiledGraph[T], error) {
 	if err := g.Validate(); err != nil {
 		return nil, fmt.Errorf("graph validation failed: %w", err)
 	}
 
 	g.compiled = true
+
+	config := NewConfig[T](g.graphID, opt...)
 
 	return &CompiledGraph[T]{
 		graph:  g,
@@ -74,7 +92,12 @@ func (cg *CompiledGraph[T]) loadOrInitCheckpoint(ctx context.Context, initialSta
 	return data
 }
 
-func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T) (T, error) {
+func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T, opt ...ExecutionOption[T]) (T, error) {
+	// Apply execution options
+	for _, o := range opt {
+		o(&cg.config)
+	}
+
 	if cg.config.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(cg.config.Timeout)*time.Second)

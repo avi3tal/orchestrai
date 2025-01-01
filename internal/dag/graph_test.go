@@ -48,7 +48,7 @@ func (s ComplexState) Merge(st ComplexState) ComplexState {
 
 // Test basic graph with direct edges
 func TestSimpleGraphExecution(t *testing.T) {
-	g := NewGraph[SimpleState]()
+	g := NewGraph[SimpleState]("simple-graph")
 
 	// Add nodes that increment the value
 	require.NoError(t, g.AddNode("add1", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
@@ -67,19 +67,16 @@ func TestSimpleGraphExecution(t *testing.T) {
 	require.NoError(t, g.SetEntryPoint("add1"))
 
 	// Compile and run
-	compiled, err := g.Compile(Config[SimpleState]{
-		ThreadID: "test-1",
-		Debug:    true,
-	})
+	compiled, err := g.Compile(WithDebug[SimpleState]())
 	require.NoError(t, err)
 
-	result, err := compiled.Run(context.Background(), SimpleState{Value: 0})
+	result, err := compiled.Run(context.Background(), SimpleState{Value: 0}, WithThreadID[SimpleState]("test-1"))
 	require.NoError(t, err)
 	assert.Equal(t, 3, result.Value) // 0 + 1 + 2
 }
 
 func TestConditionalGraphExecution(t *testing.T) {
-	g := NewGraph[SimpleState]()
+	g := NewGraph[SimpleState]("conditional-graph")
 
 	// Add nodes
 	require.NoError(t, g.AddNode("start", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
@@ -130,13 +127,10 @@ func TestConditionalGraphExecution(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			compiled, err := g.Compile(Config[SimpleState]{
-				ThreadID: fmt.Sprintf("test-%s", tc.name),
-				Debug:    true,
-			})
+			compiled, err := g.Compile(WithDebug[SimpleState]())
 			require.NoError(t, err)
 
-			result, err := compiled.Run(context.Background(), SimpleState{Value: tc.initialValue})
+			result, err := compiled.Run(context.Background(), SimpleState{Value: tc.initialValue}, WithThreadID[SimpleState](fmt.Sprintf("test-%s", tc.name)))
 			require.NoError(t, err)
 			assert.Equal(t, tc.expectedValue, result.Value)
 		})
@@ -145,7 +139,7 @@ func TestConditionalGraphExecution(t *testing.T) {
 
 // Test graph with channels
 func TestChannelGraphExecution(t *testing.T) {
-	g := NewGraph[ComplexState]()
+	g := NewGraph[ComplexState]("channel-graph")
 
 	// Add channels
 	require.NoError(t, g.AddChannel("numbers", LastValueChannelType))
@@ -195,13 +189,10 @@ func TestChannelGraphExecution(t *testing.T) {
 
 	require.NoError(t, g.SetEntryPoint("start"))
 
-	compiled, err := g.Compile(Config[ComplexState]{
-		ThreadID: "test-channels",
-		Debug:    true,
-	})
+	compiled, err := g.Compile(WithDebug[ComplexState]())
 	require.NoError(t, err)
 
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)})
+	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, WithThreadID[ComplexState]("test-channels"))
 	require.NoError(t, err)
 	assert.True(t, result.Done)
 	assert.Equal(t, []int{1, 2, 3, 4, 5, 6}, result.Numbers)
@@ -209,8 +200,8 @@ func TestChannelGraphExecution(t *testing.T) {
 
 // Test graph with checkpointing
 func TestCheckpointedGraphExecution(t *testing.T) {
-	g := NewGraph[ComplexState]()
-	checkpointer := NewMemoryCheckpointer[ComplexState]()
+	g := NewGraph[ComplexState]("checkpoint-graph")
+	store := NewMemoryStore[ComplexState]()
 
 	// Add nodes with artificial delays
 	require.NoError(t, g.AddNode("step1", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
@@ -232,27 +223,23 @@ func TestCheckpointedGraphExecution(t *testing.T) {
 	require.NoError(t, g.SetEntryPoint("step1"))
 
 	// First run - should complete normally
-	compiled, err := g.Compile(Config[ComplexState]{
-		ThreadID:     "test-checkpoint",
-		Checkpointer: checkpointer,
-		Debug:        true,
-	})
+	compiled, err := g.Compile(WithCheckpointStore(store), WithDebug[ComplexState]())
 	require.NoError(t, err)
 
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)})
+	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, WithThreadID[ComplexState]("test-checkpoint"))
 	require.NoError(t, err)
 	assert.Equal(t, "Step 2 complete", result.Text)
 	assert.ElementsMatch(t, []int{1, 2}, result.Numbers)
 
 	// Verify checkpoint exists
-	saved, err := checkpointer.Load(context.Background(), Config[ComplexState]{ThreadID: "test-checkpoint"})
+	saved, err := store.Load(context.Background(), CheckpointKey{ThreadID: "test-checkpoint", GraphID: g.graphID})
 	require.NoError(t, err)
 	assert.Equal(t, result, saved.State)
 }
 
 // Test graph with branches
 func TestBranchGraphExecution(t *testing.T) {
-	g := NewGraph[ComplexState]()
+	g := NewGraph[ComplexState]("branch-graph")
 
 	// Add nodes
 	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
@@ -286,13 +273,11 @@ func TestBranchGraphExecution(t *testing.T) {
 
 	require.NoError(t, g.SetEntryPoint("start"))
 
-	compiled, err := g.Compile(Config[ComplexState]{
-		ThreadID: "test-branches",
-		Debug:    true,
-	})
+	// Compile and run
+	compiled, err := g.Compile(WithDebug[ComplexState]())
 	require.NoError(t, err)
 
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)})
+	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, WithThreadID[ComplexState]("test-branches"))
 	require.NoError(t, err)
 	assert.True(t, result.Done)
 	assert.Equal(t, []int{0, 1, 2}, result.Numbers) // Should process 3 times
@@ -314,7 +299,7 @@ func (s IntState) Merge(st IntState) IntState {
 
 // Test adding nodes to the graph
 func TestAddNode(t *testing.T) {
-	graph := NewGraph[IntState]()
+	graph := NewGraph[IntState]("test-graph")
 
 	// Add valid node
 	err := graph.AddNode("node1", func(ctx context.Context, state IntState, config Config[IntState]) (NodeResponse[IntState], error) {
@@ -330,7 +315,7 @@ func TestAddNode(t *testing.T) {
 
 // Test adding edges to the graph
 func TestAddEdge(t *testing.T) {
-	graph := NewGraph[IntState]()
+	graph := NewGraph[IntState]("test-graph")
 	_ = graph.AddNode("node1", nil, nil)
 	_ = graph.AddNode("node2", nil, nil)
 

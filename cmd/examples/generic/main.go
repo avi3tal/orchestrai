@@ -37,7 +37,7 @@ func AddAIMessage(text string) func(context.Context, MessagesState, dag.Config[M
 }
 
 func main() {
-	g := dag.NewGraph[MessagesState]()
+	g := dag.NewGraph[MessagesState]("pending-agents")
 
 	// Add nodes
 	if err := g.AddNode("agentA", AddAIMessage("Hello"), nil); err != nil {
@@ -73,15 +73,12 @@ func main() {
 
 	g.PrintGraph()
 
-	// Compile and run
-	config := dag.Config[MessagesState]{
-		ThreadID: "thread-1",
-		MaxSteps: 100,
-		Timeout:  30,
-		Debug:    true,
-	}
-
-	compiled, err := g.Compile(config)
+	compiled, err := g.Compile(
+		dag.WithDebug[MessagesState](),
+		dag.WithCheckpointStore(dag.NewMemoryStore[MessagesState]()),
+		dag.WithTimeout[MessagesState](30),
+		dag.WithMaxSteps[MessagesState](100),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -90,7 +87,7 @@ func main() {
 		Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeHuman, "Hello my name is Bowie")},
 	}
 
-	finalState, err := compiled.Run(context.Background(), initialState)
+	finalState, err := compiled.Run(context.Background(), initialState, dag.WithThreadID[MessagesState]("thread-1"))
 	if err != nil {
 		panic(err)
 	}

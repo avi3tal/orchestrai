@@ -3,11 +3,14 @@ package dag
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"strings"
 )
 
 // Graph represents the base graph structure
 type Graph[T GraphState[T]] struct {
+	graphID  string
 	nodes    map[string]NodeSpec[T]
 	edges    []Edge
 	branches map[string][]Branch[T]
@@ -17,13 +20,37 @@ type Graph[T GraphState[T]] struct {
 	compiled   bool
 }
 
+type GraphOption[T GraphState[T]] func(*Graph[T])
+
+func WithGraphID[T GraphState[T]](id string) GraphOption[T] {
+	return func(g *Graph[T]) {
+		g.graphID = id
+	}
+
+}
+
 // NewGraph creates a new graph instance
-func NewGraph[T GraphState[T]]() *Graph[T] {
-	return &Graph[T]{
+func NewGraph[T GraphState[T]](name string, opt ...GraphOption[T]) *Graph[T] {
+	graphName := "graph"
+	if name != "" {
+		graphName = name
+	}
+
+	g := Graph[T]{
+		graphID:  uuid.New().String(),
 		nodes:    make(map[string]NodeSpec[T]),
 		branches: make(map[string][]Branch[T]),
 		channels: make(map[string]Channel[T]),
 	}
+	for _, o := range opt {
+		o(&g)
+	}
+
+	// remove spaces
+	graphName = strings.ReplaceAll(graphName, " ", "-")
+	// prepend graph name to graphID
+	g.graphID = fmt.Sprintf("%s-%s", graphName, g.graphID)
+	return &g
 }
 
 // AddNode adds a new node to the graph

@@ -4,42 +4,84 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
-type PendingExecutionError struct {
-	NodeID string
+type CheckpointKey struct {
+	GraphID  string
+	ThreadID string
 }
 
-func (e *PendingExecutionError) Error() string {
-	return fmt.Sprintf("execution pending at node: %s", e.NodeID)
+type CheckpointMeta struct {
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Steps     int
+	Status    NodeExecutionStatus
+}
+
+type Checkpoint[T GraphState[T]] struct {
+	Key    CheckpointKey
+	Meta   CheckpointMeta
+	State  T
+	NodeID string
 }
 
 // CheckpointStore interface defines persistent storage operations
 type CheckpointStore[T GraphState[T]] interface {
-	Save(ctx context.Context, threadID string, data *CheckpointData[T]) error
-	Load(ctx context.Context, threadID string) (*CheckpointData[T], error)
+	Save(ctx context.Context, checkpoint Checkpoint[T]) error
+	Load(ctx context.Context, key CheckpointKey) (*Checkpoint[T], error)
+	List(ctx context.Context, graphID string) ([]CheckpointKey, error)
+	Delete(ctx context.Context, key CheckpointKey) error
 }
 
-// StateCheckpointer manages execution state persistence
-type StateCheckpointer[T GraphState[T]] struct {
-	store CheckpointStore[T]
-	mu    sync.RWMutex
+type MemoryStore[T GraphState[T]] struct {
+	checkpoints map[CheckpointKey]*Checkpoint[T]
+	mu          sync.RWMutex
 }
 
-func NewStateCheckpointer[T GraphState[T]](store CheckpointStore[T]) *StateCheckpointer[T] {
-	return &StateCheckpointer[T]{
-		store: store,
+func NewMemoryStore[T GraphState[T]]() *MemoryStore[T] {
+	return &MemoryStore[T]{
+		checkpoints: make(map[CheckpointKey]*Checkpoint[T]),
 	}
 }
 
-func (sc *StateCheckpointer[T]) Save(ctx context.Context, config Config[T], data *CheckpointData[T]) error {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	return sc.store.Save(ctx, config.ThreadID, data)
+func (m *MemoryStore[T]) Save(ctx context.Context, checkpoint Checkpoint[T]) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	checkpoint.Meta.UpdatedAt = time.Now()
+	m.checkpoints[checkpoint.Key] = &checkpoint
+	return nil
 }
 
-func (sc *StateCheckpointer[T]) Load(ctx context.Context, config Config[T]) (*CheckpointData[T], error) {
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
-	return sc.store.Load(ctx, config.ThreadID)
+func (m *MemoryStore[T]) Load(ctx context.Context, key CheckpointKey) (*Checkpoint[T], error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	cp, exists := m.checkpoints[key]
+	if !exists {
+		return nil, fmt.Errorf("checkpoint not found: %v", key)
+	}
+	return cp, nil
+}
+
+func (m *MemoryStore[T]) List(ctx context.Context, graphID string) ([]CheckpointKey, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var keys []CheckpointKey
+	for k := range m.checkpoints {
+		if k.GraphID == graphID {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
+func (m *MemoryStore[T]) Delete(ctx context.Context, key CheckpointKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.checkpoints, key)
+	return nil
 }
