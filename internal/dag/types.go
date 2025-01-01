@@ -35,3 +35,15 @@ type Checkpointer[T GraphState[T]] interface {
 	// Load retrieves a previously saved state
 	Load(ctx context.Context, config Config[T]) (*CheckpointData[T], error)
 }
+
+type Grapher[T GraphState[T]] interface {
+	AddNode(name string, fn func(context.Context, T, Config[T]) (NodeResponse[T], error), metadata map[string]any) error
+	AddEdge(from, to string, metadata map[string]any) error
+	AddBranch(from string, path func(context.Context, T, Config[T]) string, then string, metadata map[string]any) error
+	AddChannel(name string, channel Channel[T]) error
+	Compile(opt ...CompilationOption[T]) (*CompiledGraph[T], error)
+}
+
+type CompiledGrapher[T GraphState[T]] interface {
+	Run(ctx context.Context, initialState T, opt ...ExecutionOption[T]) (T, error)
+}

@@ -2,7 +2,6 @@ package dag
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 
@@ -86,34 +85,6 @@ func TestMemoryCheckpointerEdgeCases(t *testing.T) {
 	}()
 
 	wg.Wait()
-}
-
-type MockCheckpointStore struct {
-	data map[string]*CheckpointData[TestState]
-	mu   sync.RWMutex
-}
-
-func NewMockCheckpointStore() *MockCheckpointStore {
-	return &MockCheckpointStore{
-		data: make(map[string]*CheckpointData[TestState]),
-	}
-}
-
-func (m *MockCheckpointStore) Save(ctx context.Context, threadID string, data *CheckpointData[TestState]) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.data[threadID] = data
-	return nil
-}
-
-func (m *MockCheckpointStore) Load(ctx context.Context, threadID string) (*CheckpointData[TestState], error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	data, exists := m.data[threadID]
-	if !exists {
-		return nil, fmt.Errorf("no checkpoint found for thread %s", threadID)
-	}
-	return data, nil
 }
 
 func TestStateCheckpointer(t *testing.T) {

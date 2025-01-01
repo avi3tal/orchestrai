@@ -120,30 +120,13 @@ func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, Config[T
 }
 
 // AddChannel adds a state management channel
-func (g *Graph[T]) AddChannel(name string, channelType ChannelType, options ...any) error {
+func (g *Graph[T]) AddChannel(name string, channel Channel[T]) error {
 	if g.compiled {
 		return fmt.Errorf("cannot add channel to compiled graph")
 	}
 
 	if _, exists := g.channels[name]; exists {
 		return fmt.Errorf("channel %s already exists", name)
-	}
-
-	var channel Channel[T]
-	switch channelType {
-	case LastValueChannelType:
-		channel = NewLastValue[T]()
-	case BarrierChannelType:
-		if len(options) == 0 {
-			return fmt.Errorf("barrier channel requires required nodes list")
-		}
-		required, ok := options[0].([]string)
-		if !ok {
-			return fmt.Errorf("invalid required nodes list for barrier channel")
-		}
-		channel = NewBarrierChannel[T](required)
-	default:
-		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}
 
 	g.channels[name] = channel

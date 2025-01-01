@@ -45,7 +45,7 @@ func NewMemoryStore[T GraphState[T]]() *MemoryStore[T] {
 	}
 }
 
-func (m *MemoryStore[T]) Save(ctx context.Context, checkpoint Checkpoint[T]) error {
+func (m *MemoryStore[T]) Save(_ context.Context, checkpoint Checkpoint[T]) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -54,7 +54,7 @@ func (m *MemoryStore[T]) Save(ctx context.Context, checkpoint Checkpoint[T]) err
 	return nil
 }
 
-func (m *MemoryStore[T]) Load(ctx context.Context, key CheckpointKey) (*Checkpoint[T], error) {
+func (m *MemoryStore[T]) Load(_ context.Context, key CheckpointKey) (*Checkpoint[T], error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -65,7 +65,7 @@ func (m *MemoryStore[T]) Load(ctx context.Context, key CheckpointKey) (*Checkpoi
 	return cp, nil
 }
 
-func (m *MemoryStore[T]) List(ctx context.Context, graphID string) ([]CheckpointKey, error) {
+func (m *MemoryStore[T]) List(_ context.Context, graphID string) ([]CheckpointKey, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -78,7 +78,7 @@ func (m *MemoryStore[T]) List(ctx context.Context, graphID string) ([]Checkpoint
 	return keys, nil
 }
 
-func (m *MemoryStore[T]) Delete(ctx context.Context, key CheckpointKey) error {
+func (m *MemoryStore[T]) Delete(_ context.Context, key CheckpointKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

@@ -57,26 +57,6 @@ func PendingAgent(ctx context.Context, state MessagesState, c dag.Config[Message
 	}, nil
 }
 
-func ApprovalNode(ctx context.Context, state MessagesState, c dag.Config[MessagesState]) (dag.NodeResponse[MessagesState], error) {
-	// Simulate user approval
-	userApproved := true // Replace with actual approval logic
-
-	if !userApproved {
-		return dag.NodeResponse[MessagesState]{
-			Status: dag.StatusFailed,
-		}, errors.New("approval denied")
-	}
-
-	// Append approval message and return to the pending agent
-	ms := MessagesState{
-		Messages: append(state.Messages, llms.TextParts(llms.ChatMessageTypeAI, "Approval Granted")),
-	}
-	return dag.NodeResponse[MessagesState]{
-		State:  ms,
-		Status: dag.StatusCompleted,
-	}, nil
-}
-
 func main() {
 	g := dag.NewGraph[MessagesState]("pending-agent")
 

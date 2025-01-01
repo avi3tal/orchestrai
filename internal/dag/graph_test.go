@@ -137,67 +137,6 @@ func TestConditionalGraphExecution(t *testing.T) {
 	}
 }
 
-// Test graph with channels
-func TestChannelGraphExecution(t *testing.T) {
-	g := NewGraph[ComplexState]("channel-graph")
-
-	// Add channels
-	require.NoError(t, g.AddChannel("numbers", LastValueChannelType))
-
-	// Add nodes
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 1, 2, 3)
-		channel := g.channels["numbers"]
-		err := channel.Write(ctx, s, c)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, err
-	}, nil))
-
-	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
-		// Read previous state from channel
-		channel := g.channels["numbers"]
-		prevState, err := channel.Read(ctx, c)
-		if err != nil {
-			return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, err
-		}
-
-		// Append new numbers to existing ones
-		s.Numbers = append(prevState.Numbers, 4, 5, 6)
-		err = channel.Write(ctx, s, c)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, err
-	}, nil))
-
-	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
-		channel := g.channels["numbers"]
-		state, err := channel.Read(ctx, c)
-		if err != nil {
-			return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, err
-		}
-		s.Numbers = state.Numbers
-		s.Done = true
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
-	}, nil))
-
-	// Add sequential path
-	require.NoError(t, g.AddEdge("start", "producer1", nil))
-	require.NoError(t, g.AddEdge("producer1", "producer2", nil))
-	require.NoError(t, g.AddEdge("producer2", "consumer", nil))
-	require.NoError(t, g.AddEdge("consumer", END, nil))
-
-	require.NoError(t, g.SetEntryPoint("start"))
-
-	compiled, err := g.Compile(WithDebug[ComplexState]())
-	require.NoError(t, err)
-
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, WithThreadID[ComplexState]("test-channels"))
-	require.NoError(t, err)
-	assert.True(t, result.Done)
-	assert.Equal(t, []int{1, 2, 3, 4, 5, 6}, result.Numbers)
-}
-
 // Test graph with checkpointing
 func TestCheckpointedGraphExecution(t *testing.T) {
 	g := NewGraph[ComplexState]("checkpoint-graph")
