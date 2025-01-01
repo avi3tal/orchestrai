@@ -8,22 +8,6 @@ import (
 
 const DefaultMaxRetries = 1
 
-// NodeExecutionStatus represents the current state of node execution
-type NodeExecutionStatus string
-
-const (
-	StatusCompleted NodeExecutionStatus = "completed"
-	StatusPending   NodeExecutionStatus = "pending" // Waiting for user input
-	StatusFailed    NodeExecutionStatus = "failed"
-	StatusReady     NodeExecutionStatus = "ready" // Ready to execute
-)
-
-// NodeResponse encapsulates the execution result
-type NodeResponse[T GraphState[T]] struct {
-	State  T
-	Status NodeExecutionStatus
-}
-
 type NextNode struct {
 	Target string // Next node to execute
 	Then   string // Optional post-processing node
@@ -56,68 +40,33 @@ func (g *Graph[T]) Compile(opt ...CompilationOption[T]) (*CompiledGraph[T], erro
 	}, nil
 }
 
-func (cg *CompiledGraph[T]) saveCheckpoint(ctx context.Context, state T, node string, status NodeExecutionStatus, steps int) error {
-	if cg.config.Checkpointer == nil {
-		return nil
-	}
-
-	data := &CheckpointData[T]{
-		State:       state,
-		CurrentNode: node,
-		Status:      status,
-		Steps:       steps,
-	}
-	return cg.config.Checkpointer.Save(ctx, cg.config, data)
-}
-
-func (cg *CompiledGraph[T]) loadOrInitCheckpoint(ctx context.Context, initialState T) CheckpointData[T] {
-	data := CheckpointData[T]{
-		State:       initialState,
-		CurrentNode: cg.graph.entryPoint,
-		Status:      StatusReady,
-		Steps:       0,
-	}
-
-	if cg.config.Checkpointer == nil {
-		return data
-	}
-
-	// Load the last checkpoint if available
-	if checkpoint, err := cg.config.Checkpointer.Load(ctx, cg.config); err == nil {
-		data.CurrentNode = checkpoint.CurrentNode
-		data.State = checkpoint.State.Merge(initialState)
-		data.Steps = checkpoint.Steps
-	}
-
-	return data
-}
-
 func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T, opt ...ExecutionOption[T]) (T, error) {
 	// Apply execution options
+	config := cg.config.Clone()
 	for _, o := range opt {
-		o(&cg.config)
+		o(&config)
 	}
 
-	if cg.config.Timeout > 0 {
+	if config.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(cg.config.Timeout)*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(config.Timeout)*time.Second)
 		defer cancel()
 	}
 
 	// Load or initialize the state and checkpoint
-	checkpoint := cg.loadOrInitCheckpoint(ctx, initialState)
+	checkpoint := loadOrInitCheckpoint(ctx, cg.graph.entryPoint, initialState, config)
 	currentNode := checkpoint.CurrentNode
 	state := checkpoint.State
 	steps := checkpoint.Steps
 	var nextInfo *NextNodeInfo[T]
 
 	for currentNode != END {
-		if cg.config.Debug {
+		if config.Debug {
 			// TODO - add logging
 			fmt.Printf("Executing node: %s (Step: %d)\n", currentNode, steps)
 		}
 
-		if cg.config.MaxSteps > 0 && steps >= cg.config.MaxSteps {
+		if config.MaxSteps > 0 && steps >= config.MaxSteps {
 			return state, fmt.Errorf("max steps reached")
 		}
 
@@ -128,7 +77,7 @@ func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T, opt ...Exec
 				return state, fmt.Errorf("then node %s not found", nextInfo.Target.Then)
 			}
 
-			resp, err := cg.executeNode(ctx, thenNode, state)
+			resp, err := executeNode(ctx, thenNode, state, config)
 			if err != nil {
 				return state, err
 			}
@@ -142,7 +91,7 @@ func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T, opt ...Exec
 		}
 
 		// Execute the current node
-		resp, err := cg.executeNode(ctx, node, state)
+		resp, err := executeNode(ctx, node, state, config)
 		if err != nil {
 			return state, err
 		}
@@ -151,7 +100,7 @@ func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T, opt ...Exec
 		state = state.Merge(resp.State)
 
 		// Save the checkpoint after executing the node
-		if err = cg.saveCheckpoint(ctx, state, currentNode, resp.Status, steps); err != nil {
+		if err = saveCheckpoint(ctx, state, currentNode, resp.Status, steps, config); err != nil {
 			return state, err
 		}
 
@@ -204,25 +153,4 @@ func (cg *CompiledGraph[T]) getNextNode(ctx context.Context, currentNode string,
 	}
 
 	return NextNode{}, fmt.Errorf("no transition from node: %s", currentNode)
-}
-
-func (cg *CompiledGraph[T]) executeNode(ctx context.Context, node NodeSpec[T], state T) (NodeResponse[T], error) {
-	maxAttempts := DefaultMaxRetries
-	if node.RetryPolicy != nil {
-		maxAttempts = node.RetryPolicy.MaxAttempts
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 && node.RetryPolicy != nil {
-			time.Sleep(time.Duration(node.RetryPolicy.Delay) * time.Second)
-		}
-
-		resp, err := node.Function(ctx, state, cg.config)
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
-	}
-	return NodeResponse[T]{}, lastErr
 }

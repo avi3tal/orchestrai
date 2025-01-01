@@ -36,6 +36,14 @@ type Checkpointer[T GraphState[T]] interface {
 	Load(ctx context.Context, config Config[T]) (*CheckpointData[T], error)
 }
 
+// CheckpointStore interface defines persistent storage operations
+type CheckpointStore[T GraphState[T]] interface {
+	Save(ctx context.Context, checkpoint Checkpoint[T]) error
+	Load(ctx context.Context, key CheckpointKey) (*Checkpoint[T], error)
+	List(ctx context.Context, graphID string) ([]CheckpointKey, error)
+	Delete(ctx context.Context, key CheckpointKey) error
+}
+
 type Grapher[T GraphState[T]] interface {
 	AddNode(name string, fn func(context.Context, T, Config[T]) (NodeResponse[T], error), metadata map[string]any) error
 	AddEdge(from, to string, metadata map[string]any) error

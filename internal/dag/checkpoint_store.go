@@ -26,14 +26,6 @@ type Checkpoint[T GraphState[T]] struct {
 	NodeID string
 }
 
-// CheckpointStore interface defines persistent storage operations
-type CheckpointStore[T GraphState[T]] interface {
-	Save(ctx context.Context, checkpoint Checkpoint[T]) error
-	Load(ctx context.Context, key CheckpointKey) (*Checkpoint[T], error)
-	List(ctx context.Context, graphID string) ([]CheckpointKey, error)
-	Delete(ctx context.Context, key CheckpointKey) error
-}
-
 type MemoryStore[T GraphState[T]] struct {
 	checkpoints map[CheckpointKey]*Checkpoint[T]
 	mu          sync.RWMutex
