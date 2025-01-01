@@ -17,6 +17,7 @@ type CheckpointMeta struct {
 	UpdatedAt time.Time
 	Steps     int
 	Status    NodeExecutionStatus
+	NodeQueue []string
 }
 
 type Checkpoint[T GraphState[T]] struct {

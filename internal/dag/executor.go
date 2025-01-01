@@ -51,6 +51,7 @@ func saveCheckpoint[T GraphState[T]](
 	status NodeExecutionStatus,
 	steps int,
 	config Config[T],
+	nodeQueue ...string,
 ) error {
 	if config.Checkpointer == nil {
 		return nil
@@ -61,6 +62,7 @@ func saveCheckpoint[T GraphState[T]](
 		CurrentNode: node,
 		Status:      status,
 		Steps:       steps,
+		NodeQueue:   nodeQueue,
 	}
 	return config.Checkpointer.Save(ctx, config, data)
 }
@@ -76,6 +78,7 @@ func loadOrInitCheckpoint[T GraphState[T]](
 		CurrentNode: entryPoint,
 		Status:      StatusReady,
 		Steps:       0,
+		NodeQueue:   []string{entryPoint},
 	}
 
 	if config.Checkpointer == nil {
@@ -84,12 +87,32 @@ func loadOrInitCheckpoint[T GraphState[T]](
 
 	// Load the last checkpoint if available
 	if checkpoint, err := config.Checkpointer.Load(ctx, config); err == nil {
-		data.CurrentNode = checkpoint.CurrentNode
 		data.State = checkpoint.State.Merge(initialState)
 		data.Steps = checkpoint.Steps
+		// Restore the CurrentNode and node queue if the checkpoint is pending
+		// This will resume the execution from the last pending node
+		// and skip the nodes that have already
+		if checkpoint.Status == StatusPending {
+			data.CurrentNode = checkpoint.CurrentNode
+			data.NodeQueue = checkpoint.NodeQueue
+		}
 	}
 
 	return data
+}
+
+func checkExecutionLimits[T GraphState[T]](ctx context.Context, steps int, config Config[T]) error {
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("execution cancelled: %w", ctx.Err())
+	default:
+	}
+
+	if config.MaxSteps > 0 && steps >= config.MaxSteps {
+		return fmt.Errorf("max steps reached (%d)", config.MaxSteps)
+	}
+
+	return nil
 }
 
 func execute[T GraphState[T]](
@@ -106,52 +129,39 @@ func execute[T GraphState[T]](
 
 	// Load or initialize the state and checkpoint
 	checkpoint := loadOrInitCheckpoint(ctx, graph.entryPoint, initialState, config)
-	currentNode := checkpoint.CurrentNode
 	state := checkpoint.State
 	steps := checkpoint.Steps
-	var nextInfo *NextNodeInfo[T]
+	nodeQueue := checkpoint.NodeQueue
 
-	for currentNode != END {
-		if config.Debug {
-			// TODO - add logging
-			fmt.Printf("Executing node: %s (Step: %d)\n", currentNode, steps)
+	for len(nodeQueue) > 0 {
+		if err := checkExecutionLimits(ctx, steps, config); err != nil {
+			return state, err
 		}
 
-		if config.MaxSteps > 0 && steps >= config.MaxSteps {
-			return state, fmt.Errorf("max steps reached")
+		// Pop next node
+		current := nodeQueue[0]
+		nodeQueue = nodeQueue[1:]
+
+		if current == END {
+			continue
 		}
 
-		// Execute Then node if pending from previous iteration
-		if nextInfo != nil && nextInfo.Target.Then != "" {
-			thenNode, exists := graph.nodes[nextInfo.Target.Then]
-			if !exists {
-				return state, fmt.Errorf("then node %s not found", nextInfo.Target.Then)
-			}
-
-			resp, err := executeNode(ctx, thenNode, state, config)
-			if err != nil {
-				return state, err
-			}
-			state = state.Merge(resp.State)
-			nextInfo = nil
-		}
-
-		node, exists := graph.nodes[currentNode]
+		// Execute current node
+		node, exists := graph.nodes[current]
 		if !exists {
-			return state, fmt.Errorf("node %s not found", currentNode)
+			return state, fmt.Errorf("node %s not found", current)
 		}
 
-		// Execute the current node
 		resp, err := executeNode(ctx, node, state, config)
 		if err != nil {
 			return state, err
 		}
-
-		// Merge the response state with the current state
 		state = state.Merge(resp.State)
 
 		// Save the checkpoint after executing the node
-		if err = saveCheckpoint(ctx, state, currentNode, resp.Status, steps, config); err != nil {
+		if err = saveCheckpoint(
+			ctx, state, current, resp.Status, steps, config, nodeQueue...,
+		); err != nil {
 			return state, err
 		}
 
@@ -160,25 +170,20 @@ func execute[T GraphState[T]](
 			return state, nil
 		}
 
-		// Determine the next node
-		nextNode, err := getNextNode(ctx, graph, currentNode, state, config)
+		// Queue next nodes
+		next, err := getNextNode(ctx, graph, current, state, config)
 		if err != nil {
 			return state, err
 		}
 
-		// Store next node info if it has Then
-		if nextNode.Then != "" && nextNode.Then != END {
-			nextInfo = &NextNodeInfo[T]{
-				Target:    nextNode,
-				PrevState: state,
-			}
+		// Queue Then node if exists
+		if next.Target != END {
+			nodeQueue = append(nodeQueue, next.Target)
+		}
+		if next.Then != "" && next.Then != END {
+			nodeQueue = append(nodeQueue, next.Then)
 		}
 
-		if config.Debug {
-			fmt.Printf("Transition: %s -> %s\n", currentNode, nextNode)
-		}
-
-		currentNode = nextNode.Target
 		steps++
 	}
 
