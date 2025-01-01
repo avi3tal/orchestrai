@@ -2,11 +2,44 @@ package dag
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+type TestState struct {
+	Value int
+}
+
+func (s TestState) Validate() error {
+	if s.Value < 0 {
+		return fmt.Errorf("value cannot be negative")
+	}
+	return nil
+}
+
+func (s TestState) Merge(other TestState) TestState {
+	return TestState{Value: s.Value + other.Value}
+}
+
+// Test state validation
+func TestStateValidation(t *testing.T) {
+	state := TestState{Value: 5}
+	assert.NoError(t, state.Validate())
+
+	invalidState := TestState{Value: -1}
+	assert.Error(t, invalidState.Validate())
+}
+
+// Test state merging
+func TestStateMerge(t *testing.T) {
+	state1 := TestState{Value: 5}
+	state2 := TestState{Value: 3}
+	mergedState := state1.Merge(state2)
+	assert.Equal(t, 8, mergedState.Value)
+}
 
 func TestMemoryCheckpointer(t *testing.T) {
 	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())

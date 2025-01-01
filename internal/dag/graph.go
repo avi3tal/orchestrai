@@ -257,6 +257,34 @@ func (g *Graph[T]) SetEntryPoint(name string) error {
 }
 
 // Validate Updated validation methods
+//func (g *Graph[T]) Validate() error {
+//	if g.entryPoint == "" {
+//		return fmt.Errorf("entry point not set")
+//	}
+//
+//	// Check if entry point exists
+//	if _, exists := g.nodes[g.entryPoint]; !exists {
+//		return fmt.Errorf("entry point node %s does not exist", g.entryPoint)
+//	}
+//
+//	// Validate all nodes have a path to END
+//	unvisited := make(map[string]bool)
+//	for node := range g.nodes {
+//		unvisited[node] = true
+//	}
+//
+//	if !g.hasPathToEnd(g.entryPoint, unvisited) {
+//		return fmt.Errorf("no path to END from entry point %s", g.entryPoint)
+//	}
+//
+//	// Check for unreachable nodes
+//	for node := range unvisited {
+//		return fmt.Errorf("node %s is unreachable from entry point", node)
+//	}
+//
+//	return nil
+//}
+
 func (g *Graph[T]) Validate() error {
 	if g.entryPoint == "" {
 		return fmt.Errorf("entry point not set")
@@ -267,49 +295,70 @@ func (g *Graph[T]) Validate() error {
 		return fmt.Errorf("entry point node %s does not exist", g.entryPoint)
 	}
 
-	// Validate all nodes have a path to END
-	unvisited := make(map[string]bool)
+	// Use DFS to find reachable nodes
+	visited := make(map[string]bool)
+	reachable := g.dfs(g.entryPoint, visited)
+
+	// Check all nodes are reachable
 	for node := range g.nodes {
-		unvisited[node] = true
+		if !reachable[node] {
+			return fmt.Errorf("node %s is unreachable from entry point", node)
+		}
 	}
 
-	if !g.hasPathToEnd(g.entryPoint, unvisited) {
-		return fmt.Errorf("no path to END from entry point %s", g.entryPoint)
-	}
-
-	// Check for unreachable nodes
-	for node := range unvisited {
-		return fmt.Errorf("node %s is unreachable from entry point", node)
+	// Verify path to END exists
+	if !reachable[END] {
+		return fmt.Errorf("no path to END from entry point")
 	}
 
 	return nil
 }
 
-func (g *Graph[T]) hasPathToEnd(node string, unvisited map[string]bool) bool {
-	if node == END {
-		return true
-	}
+func (g *Graph[T]) dfs(node string, visited map[string]bool) map[string]bool {
+	visited[node] = true
+	reachable := make(map[string]bool)
+	reachable[node] = true
 
-	// If we've already visited this node, check if it's in unvisited
-	if !unvisited[node] {
-		return false
-	}
-
-	delete(unvisited, node)
-	hasPath := false
-
+	// Follow edges
 	for _, edge := range g.edges {
-		if edge.From == node {
-			if edge.To == END {
-				hasPath = true
-				break
-			}
-			if g.hasPathToEnd(edge.To, unvisited) {
-				hasPath = true
-				break
+		if edge.From == node && !visited[edge.To] {
+			for k, v := range g.dfs(edge.To, visited) {
+				reachable[k] = v
 			}
 		}
 	}
 
-	return hasPath
+	return reachable
 }
+
+//func (g *Graph[T]) hasPathToEnd(node string, unvisited map[string]bool) bool {
+//	if node == END {
+//		return true
+//	}
+//
+//	delete(unvisited, node)
+//
+//	// Check direct edges
+//	for _, edge := range g.edges {
+//		if edge.From == node {
+//			// Copy unvisited for each path to prevent cross-path interference
+//			pathUnvisited := make(map[string]bool)
+//			for k, v := range unvisited {
+//				pathUnvisited[k] = v
+//			}
+//
+//			if g.hasPathToEnd(edge.To, pathUnvisited) {
+//				// Update main unvisited map with explored path
+//				for k := range unvisited {
+//					if !pathUnvisited[k] {
+//						delete(unvisited, k)
+//					}
+//				}
+//				return true
+//			}
+//		}
+//	}
+//
+//	// Return false if no valid path found
+//	return false
+//}

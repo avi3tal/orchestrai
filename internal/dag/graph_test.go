@@ -176,6 +176,97 @@ func TestCheckpointedGraphExecution(t *testing.T) {
 	assert.Equal(t, result, saved.State)
 }
 
+func TestBranchWithThenNode(t *testing.T) {
+	g := NewGraph[ComplexState]("then-branch")
+
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		s.Numbers = append(s.Numbers, 1)
+		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	}, nil))
+
+	require.NoError(t, g.AddNode("process", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		s.Numbers = append(s.Numbers, 2)
+		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	}, nil))
+
+	require.NoError(t, g.AddNode("cleanup", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		s.Numbers = append(s.Numbers, 3)
+		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	}, nil))
+
+	require.NoError(t, g.AddEdge("start", "process", nil))
+	require.NoError(t, g.AddEdge("start", "cleanup", nil))
+	require.NoError(t, g.AddEdge("process", END, nil))
+	require.NoError(t, g.AddEdge("cleanup", END, nil))
+
+	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+		return "process"
+	}, "cleanup", nil))
+
+	require.NoError(t, g.SetEntryPoint("start"))
+
+	compiled, err := g.Compile()
+	require.NoError(t, err)
+
+	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)})
+	require.NoError(t, err)
+	assert.Equal(t, []int{1, 2, 3}, result.Numbers)
+}
+
+func TestMultipleBranches(t *testing.T) {
+	g := NewGraph[ComplexState]("multi-branch")
+
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	}, nil))
+
+	require.NoError(t, g.AddNode("pathA", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		s.Numbers = append(s.Numbers, 1)
+		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	}, nil))
+
+	require.NoError(t, g.AddNode("pathB", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		s.Numbers = append(s.Numbers, 2)
+		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	}, nil))
+
+	require.NoError(t, g.AddEdge("start", "pathA", nil))
+	require.NoError(t, g.AddEdge("start", "pathB", nil))
+	require.NoError(t, g.AddEdge("pathA", END, nil))
+	require.NoError(t, g.AddEdge("pathB", END, nil))
+
+	// First branch based on configurable
+	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+		if c.Configurable["path"] == "A" {
+			return "pathA"
+		}
+		return "pathB"
+	}, "", nil))
+
+	// Second branch based on state
+	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+		if len(s.Numbers) > 0 {
+			return "pathA"
+		}
+		return "pathB"
+	}, "", nil))
+
+	require.NoError(t, g.SetEntryPoint("start"))
+
+	compiled, err := g.Compile()
+	require.NoError(t, err)
+
+	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)},
+		WithConfigurable[ComplexState](map[string]any{"path": "A"}))
+	require.NoError(t, err)
+	assert.Equal(t, []int{1}, result.Numbers)
+
+	result, err = compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)},
+		WithConfigurable[ComplexState](map[string]any{"path": "B"}))
+	require.NoError(t, err)
+	assert.Equal(t, []int{2}, result.Numbers)
+}
+
 // Test graph with branches
 func TestBranchGraphExecution(t *testing.T) {
 	g := NewGraph[ComplexState]("branch-graph")
@@ -267,34 +358,84 @@ func TestAddEdge(t *testing.T) {
 	assert.Error(t, err)
 }
 
-type TestState struct {
-	Value int
+type SimpleStateStr struct {
+	Value string
 }
 
-func (s TestState) Validate() error {
-	if s.Value < 0 {
-		return fmt.Errorf("value cannot be negative")
+func (s SimpleStateStr) Validate() error { return nil }
+func (s SimpleStateStr) Merge(other SimpleStateStr) SimpleStateStr {
+	if other.Value != "" {
+		s.Value = other.Value
 	}
-	return nil
+	return s
 }
 
-func (s TestState) Merge(other TestState) TestState {
-	return TestState{Value: s.Value + other.Value}
+func TestGraphBasicFlow(t *testing.T) {
+	g := NewGraph[SimpleStateStr]("test")
+
+	err := g.AddNode("node1", func(ctx context.Context, s SimpleStateStr, c Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
+		return NodeResponse[SimpleStateStr]{
+			State:  SimpleStateStr{Value: "node1"},
+			Status: StatusCompleted,
+		}, nil
+	}, nil)
+	assert.NoError(t, err)
+
+	err = g.AddNode("node2", func(ctx context.Context, s SimpleStateStr, c Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
+		return NodeResponse[SimpleStateStr]{
+			State:  SimpleStateStr{Value: "node2"},
+			Status: StatusCompleted,
+		}, nil
+	}, nil)
+	assert.NoError(t, err)
+
+	err = g.AddEdge("node1", "node2", nil)
+	assert.NoError(t, err)
+
+	err = g.AddEdge("node2", END, nil)
+	assert.NoError(t, err)
+
+	err = g.SetEntryPoint("node1")
+	assert.NoError(t, err)
+
+	compiled, err := g.Compile()
+	assert.NoError(t, err)
+
+	result, err := compiled.Run(context.Background(), SimpleStateStr{})
+	assert.NoError(t, err)
+	assert.Equal(t, "node2", result.Value)
 }
 
-// Test state validation
-func TestStateValidation(t *testing.T) {
-	state := TestState{Value: 5}
-	assert.NoError(t, state.Validate())
+func TestGraphCheckpointing(t *testing.T) {
+	g := NewGraph[SimpleStateStr]("test")
+	store := NewMemoryStore[SimpleStateStr]()
 
-	invalidState := TestState{Value: -1}
-	assert.Error(t, invalidState.Validate())
-}
+	err := g.AddNode("node1", func(ctx context.Context, s SimpleStateStr, c Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
+		return NodeResponse[SimpleStateStr]{
+			State:  SimpleStateStr{Value: "checkpoint1"},
+			Status: StatusPending,
+		}, nil
+	}, nil)
+	assert.NoError(t, err)
 
-// Test state merging
-func TestStateMerge(t *testing.T) {
-	state1 := TestState{Value: 5}
-	state2 := TestState{Value: 3}
-	mergedState := state1.Merge(state2)
-	assert.Equal(t, 8, mergedState.Value)
+	err = g.AddEdge("node1", END, nil)
+	assert.NoError(t, err)
+
+	err = g.SetEntryPoint("node1")
+	assert.NoError(t, err)
+
+	compiled, err := g.Compile(WithCheckpointStore[SimpleStateStr](store))
+	assert.NoError(t, err)
+
+	threadID := "test-thread"
+	result, err := compiled.Run(context.Background(), SimpleStateStr{}, WithThreadID[SimpleStateStr](threadID))
+	assert.NoError(t, err)
+	assert.Equal(t, "checkpoint1", result.Value)
+
+	checkpoint, err := store.Load(context.Background(), CheckpointKey{
+		GraphID:  compiled.config.GraphID,
+		ThreadID: threadID,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "checkpoint1", checkpoint.State.Value)
 }
