@@ -2,8 +2,11 @@ package state
 
 import (
 	"errors"
+
 	"github.com/tmc/langchaingo/llms"
 )
+
+var ErrNoMessages = errors.New("no messages")
 
 type MessagesState struct {
 	Messages []llms.MessageContent
@@ -12,7 +15,7 @@ type MessagesState struct {
 func (m MessagesState) Validate() error {
 	// TODO add proper llms.MessageContent sequence validation
 	if len(m.Messages) == 0 {
-		return errors.New("no messages")
+		return ErrNoMessages
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -127,7 +128,7 @@ func (d *DynamicBarrierChannel[T]) Read(_ context.Context, _ types.Config[T]) (T
 
 	if !allReceived {
 		var zero T
-		return zero, fmt.Errorf("waiting for required inputs")
+		return zero, errors.New("waiting for required inputs")
 	}
 
 	return d.state, nil

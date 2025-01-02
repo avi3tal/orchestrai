@@ -6,7 +6,7 @@ import (
 	"github.com/avi3tal/orchestrai/internal/state"
 )
 
-// Channel represents state management operations
+// Channel represents state management operations.
 type Channel[T state.GraphState[T]] interface {
 	// Read reads the current state from the channel
 	Read(ctx context.Context, config Config[T]) (T, error)

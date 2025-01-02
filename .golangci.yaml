@@ -23,6 +23,10 @@ linters:
     - musttag
     - tagalign
     - interfacebloat
+    - inamedparam
+    - godot
+    - forbidigo
+    - err113
 
 linters-settings:
   cyclop:

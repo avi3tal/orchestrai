@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-// GraphInfo represents the graph structure for visualization
-type GraphInfo struct {
+// Info represents the graph structure for visualization
+type Info struct {
 	Nodes []string
 	Edges []EdgeInfo
 }
 
-// EdgeInfo GraphInfo can stay the same but Edge info becomes simpler
+// EdgeInfo Info can stay the same but Edge info becomes simpler
 type EdgeInfo struct {
 	From     string
 	To       string
@@ -19,8 +19,8 @@ type EdgeInfo struct {
 	Metadata map[string]any
 }
 
-func (g *Graph[T]) GetGraphInfo() *GraphInfo {
-	info := &GraphInfo{
+func (g *Graph[T]) GetGraphInfo() *Info {
+	info := &Info{
 		Nodes: make([]string, 0, len(g.nodes)),
 	}
 

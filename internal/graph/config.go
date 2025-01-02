@@ -7,12 +7,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	defaultMaxSteps = 20
+	defaultTimeout  = 60
+)
+
 func NewConfig[T state.GraphState[T]](graphID string, opt ...CompilationOption[T]) types.Config[T] {
 	opts := types.Config[T]{
 		GraphID:  graphID,
 		ThreadID: uuid.New().String(), // generate default thread ID
-		MaxSteps: 20,
-		Timeout:  60,
+		MaxSteps: defaultMaxSteps,
+		Timeout:  defaultTimeout,
 	}
 	for _, o := range opt {
 		o(&opts)

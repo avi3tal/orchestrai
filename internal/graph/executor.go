@@ -33,7 +33,7 @@ func executeNode[T state.GraphState[T]](
 	}
 
 	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		if attempt > 0 && node.RetryPolicy != nil {
 			time.Sleep(time.Duration(node.RetryPolicy.Delay) * time.Second)
 		}
@@ -44,7 +44,7 @@ func executeNode[T state.GraphState[T]](
 		}
 		lastErr = err
 	}
-	return NodeResponse[T]{}, lastErr
+	return NodeResponse[T]{}, fmt.Errorf("failed to execute node %s: %w", node.Name, lastErr)
 }
 
 func saveCheckpoint[T state.GraphState[T]](
@@ -67,7 +67,10 @@ func saveCheckpoint[T state.GraphState[T]](
 		Steps:       steps,
 		NodeQueue:   nodeQueue,
 	}
-	return config.Checkpointer.Save(ctx, config, data)
+	if err := config.Checkpointer.Save(ctx, config, data); err != nil {
+		return fmt.Errorf("failed to save checkpoint: %w", err)
+	}
+	return nil
 }
 
 func loadOrInitCheckpoint[T state.GraphState[T]](

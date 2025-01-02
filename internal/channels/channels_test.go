@@ -2,12 +2,11 @@ package channels
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/avi3tal/orchestrai/internal/graph"
 	"github.com/avi3tal/orchestrai/internal/types"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +33,7 @@ type ComplexState struct {
 
 func (s ComplexState) Validate() error {
 	if s.Numbers == nil {
-		return fmt.Errorf("numbers cannot be nil")
+		return errors.New("numbers cannot be nil")
 	}
 	return nil
 }
@@ -48,21 +47,24 @@ func (s ComplexState) Merge(st ComplexState) ComplexState {
 }
 
 func TestLastValueChannel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ch := NewLastValue[TestState]()
 	cfg := types.Config[TestState]{ThreadID: "test"}
 
 	t.Run("Write and Read", func(t *testing.T) {
+		t.Parallel()
 		state := TestState{Value: "test"}
 		err := ch.Write(ctx, state, cfg)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		got, err := ch.Read(ctx, cfg)
-		assert.NoError(t, err)
-		assert.Equal(t, state, got)
+		require.NoError(t, err)
+		require.Equal(t, state, got)
 	})
 
 	t.Run("Multiple Writes", func(t *testing.T) {
+		t.Parallel()
 		states := []TestState{
 			{Value: "first"},
 			{Value: "second"},
@@ -71,74 +73,81 @@ func TestLastValueChannel(t *testing.T) {
 
 		for _, s := range states {
 			err := ch.Write(ctx, s, cfg)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 
 		got, err := ch.Read(ctx, cfg)
-		assert.NoError(t, err)
-		assert.Equal(t, states[len(states)-1], got)
+		require.NoError(t, err)
+		require.Equal(t, states[len(states)-1], got)
 	})
 }
 
 func TestBarrierChannel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	required := []string{"node1", "node2"}
 	ch := NewBarrierChannel[TestState](required)
 
 	t.Run("Write Before All Required", func(t *testing.T) {
+		t.Parallel()
 		state := TestState{Value: "test"}
 		err := ch.Write(ctx, state, types.Config[TestState]{ThreadID: "node1"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		_, err = ch.Read(ctx, types.Config[TestState]{})
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("Write All Required", func(t *testing.T) {
+		t.Parallel()
 		state1 := TestState{Value: "node1"}
 		state2 := TestState{Value: "node2"}
 
 		err := ch.Write(ctx, state1, types.Config[TestState]{ThreadID: "node1"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		err = ch.Write(ctx, state2, types.Config[TestState]{ThreadID: "node2"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		got, err := ch.Read(ctx, types.Config[TestState]{})
-		assert.NoError(t, err)
-		assert.Equal(t, state2, got)
+		require.NoError(t, err)
+		require.Equal(t, state2, got)
 	})
 
 	t.Run("Invalid Node Write", func(t *testing.T) {
+		t.Parallel()
 		err := ch.Write(ctx, TestState{}, types.Config[TestState]{ThreadID: "invalid"})
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 }
 
 func TestDynamicBarrierChannel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ch := NewDynamicBarrierChannel[TestState]()
 
 	t.Run("Dynamic Registration", func(t *testing.T) {
+		t.Parallel()
 		ch.AddRequired("node1")
 		ch.AddRequired("node2")
 
 		state := TestState{Value: "test"}
 		err := ch.Write(ctx, state, types.Config[TestState]{ThreadID: "node1"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		_, err = ch.Read(ctx, types.Config[TestState]{})
-		assert.Error(t, err)
+		require.Error(t, err)
 
 		err = ch.Write(ctx, state, types.Config[TestState]{ThreadID: "node2"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		got, err := ch.Read(ctx, types.Config[TestState]{})
-		assert.NoError(t, err)
-		assert.Equal(t, state, got)
+		require.NoError(t, err)
+		require.Equal(t, state, got)
 	})
 
 	t.Run("Concurrent Access", func(t *testing.T) {
+		t.Parallel()
 		ch := NewDynamicBarrierChannel[TestState]()
 		nodes := []string{"node1", "node2", "node3"}
 
@@ -146,28 +155,30 @@ func TestDynamicBarrierChannel(t *testing.T) {
 			ch.AddRequired(node)
 		}
 
-		done := make(chan bool)
+		errCh := make(chan error, len(nodes))
+
 		for _, node := range nodes {
 			nodeID := node
 			go func() {
 				err := ch.Write(ctx, TestState{Value: nodeID}, types.Config[TestState]{ThreadID: nodeID})
-				assert.NoError(t, err)
-				done <- true
+				errCh <- err
 			}()
 		}
 
 		for range nodes {
-			<-done
+			err := <-errCh
+			require.NoError(t, err)
 		}
 
 		got, err := ch.Read(ctx, types.Config[TestState]{})
-		assert.NoError(t, err)
-		assert.NotEmpty(t, got.Value)
+		require.NoError(t, err)
+		require.NotEmpty(t, got.Value)
 	})
 }
 
 // Test graph with channels
 func TestChannelGraphExecution(t *testing.T) {
+	t.Parallel()
 	g := graph.NewGraph[ComplexState]("channel-graph")
 
 	numbersChannel := NewLastValue[ComplexState]()
@@ -175,7 +186,7 @@ func TestChannelGraphExecution(t *testing.T) {
 	require.NoError(t, g.AddChannel("numbers", numbersChannel))
 
 	// Add nodes
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
 		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
@@ -193,7 +204,8 @@ func TestChannelGraphExecution(t *testing.T) {
 		}
 
 		// Append new numbers to existing ones
-		s.Numbers = append(prevState.Numbers, 4, 5, 6)
+		copy(s.Numbers, prevState.Numbers)
+		s.Numbers = append(s.Numbers, 4, 5, 6)
 		err = numbersChannel.Write(ctx, s, c)
 		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
@@ -221,6 +233,6 @@ func TestChannelGraphExecution(t *testing.T) {
 
 	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, graph.WithThreadID[ComplexState]("test-channels"))
 	require.NoError(t, err)
-	assert.True(t, result.Done)
-	assert.Equal(t, []int{1, 2, 3, 4, 5, 6}, result.Numbers)
+	require.True(t, result.Done)
+	require.Equal(t, []int{1, 2, 3, 4, 5, 6}, result.Numbers)
 }

@@ -13,8 +13,9 @@ import (
 
 // Constants for special nodes
 const (
-	START = "START"
-	END   = "END"
+	START            = "START"
+	END              = "END"
+	defaultGraphName = "graph"
 )
 
 // NodeResponse encapsulates the execution result
@@ -63,18 +64,17 @@ type Graph[T state.GraphState[T]] struct {
 	compiled   bool
 }
 
-type GraphOption[T state.GraphState[T]] func(*Graph[T])
+type Option[T state.GraphState[T]] func(*Graph[T])
 
-func WithGraphID[T state.GraphState[T]](id string) GraphOption[T] {
+func WithGraphID[T state.GraphState[T]](id string) Option[T] {
 	return func(g *Graph[T]) {
 		g.graphID = id
 	}
-
 }
 
 // NewGraph creates a new graph instance
-func NewGraph[T state.GraphState[T]](name string, opt ...GraphOption[T]) *Graph[T] {
-	graphName := "graph"
+func NewGraph[T state.GraphState[T]](name string, opt ...Option[T]) *Graph[T] {
+	graphName := defaultGraphName
 	if name != "" {
 		graphName = name
 	}
@@ -99,7 +99,7 @@ func NewGraph[T state.GraphState[T]](name string, opt ...GraphOption[T]) *Graph[
 // AddNode adds a new node to the graph
 func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config[T]) (NodeResponse[T], error), metadata map[string]any) error {
 	if g.compiled {
-		return fmt.Errorf("cannot add node to compiled graph")
+		return errors.New("cannot add node to compiled graph")
 	}
 
 	if _, exists := g.nodes[name]; exists {
@@ -118,7 +118,7 @@ func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config
 // AddEdge methods for edge management
 func (g *Graph[T]) AddEdge(from, to string, metadata map[string]any) error {
 	if g.compiled {
-		return fmt.Errorf("cannot add edge to compiled graph")
+		return errors.New("cannot add edge to compiled graph")
 	}
 
 	if err := g.validateEdgeNodes(from, []string{to}); err != nil {
@@ -137,7 +137,7 @@ func (g *Graph[T]) AddEdge(from, to string, metadata map[string]any) error {
 // AddBranch adds a conditional branch from a node
 func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, types.Config[T]) string, then string, metadata map[string]any) error {
 	if g.compiled {
-		return fmt.Errorf("cannot add branch to compiled graph")
+		return errors.New("cannot add branch to compiled graph")
 	}
 
 	// Validate source node
@@ -165,7 +165,7 @@ func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, types.Co
 // AddChannel adds a state management channel
 func (g *Graph[T]) AddChannel(name string, channel types.Channel[T]) error {
 	if g.compiled {
-		return fmt.Errorf("cannot add channel to compiled graph")
+		return errors.New("cannot add channel to compiled graph")
 	}
 
 	if _, exists := g.channels[name]; exists {
@@ -214,7 +214,7 @@ func (g *Graph[T]) AddConditionalEdge(
 // validateEdgeNodes validates source and target nodes
 func (g *Graph[T]) validateEdgeNodes(from string, targets []string) error {
 	if from == END {
-		return fmt.Errorf("cannot add edge from END node")
+		return errors.New("cannot add edge from END node")
 	}
 
 	// Validate source node exists
@@ -225,7 +225,7 @@ func (g *Graph[T]) validateEdgeNodes(from string, targets []string) error {
 	// Validate all possible targets exist
 	for _, target := range targets {
 		if target == START {
-			return fmt.Errorf("cannot add edge to START node")
+			return errors.New("cannot add edge to START node")
 		}
 		if target != END {
 			if _, exists := g.nodes[target]; !exists {
@@ -240,11 +240,11 @@ func (g *Graph[T]) validateEdgeNodes(from string, targets []string) error {
 // SetEntryPoint sets the entry point of the graph
 func (g *Graph[T]) SetEntryPoint(name string) error {
 	if g.compiled {
-		return fmt.Errorf("cannot set entry point on compiled graph")
+		return errors.New("cannot set entry point on compiled graph")
 	}
 
 	if name == END {
-		return fmt.Errorf("cannot set END as entry point")
+		return errors.New("cannot set END as entry point")
 	}
 
 	if _, exists := g.nodes[name]; !exists {
@@ -257,7 +257,7 @@ func (g *Graph[T]) SetEntryPoint(name string) error {
 
 func (g *Graph[T]) Validate() error {
 	if g.entryPoint == "" {
-		return fmt.Errorf("entry point not set")
+		return errors.New("entry point not set")
 	}
 
 	// Check if entry point exists
@@ -278,7 +278,7 @@ func (g *Graph[T]) Validate() error {
 
 	// Verify path to END exists
 	if !reachable[END] {
-		return fmt.Errorf("no path to END from entry point")
+		return errors.New("no path to END from entry point")
 	}
 
 	return nil

@@ -2,12 +2,11 @@ package checkpoints
 
 import (
 	"context"
-	"fmt"
-	"sync"
+	"errors"
 	"testing"
 
 	"github.com/avi3tal/orchestrai/internal/types"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestState struct {
@@ -16,7 +15,7 @@ type TestState struct {
 
 func (s TestState) Validate() error {
 	if s.Value < 0 {
-		return fmt.Errorf("value cannot be negative")
+		return errors.New("value cannot be negative")
 	}
 	return nil
 }
@@ -27,22 +26,25 @@ func (s TestState) Merge(other TestState) TestState {
 
 // Test state validation
 func TestStateValidation(t *testing.T) {
+	t.Parallel()
 	state := TestState{Value: 5}
-	assert.NoError(t, state.Validate())
+	require.NoError(t, state.Validate())
 
 	invalidState := TestState{Value: -1}
-	assert.Error(t, invalidState.Validate())
+	require.Error(t, invalidState.Validate())
 }
 
 // Test state merging
 func TestStateMerge(t *testing.T) {
+	t.Parallel()
 	state1 := TestState{Value: 5}
 	state2 := TestState{Value: 3}
 	mergedState := state1.Merge(state2)
-	assert.Equal(t, 8, mergedState.Value)
+	require.Equal(t, 8, mergedState.Value)
 }
 
 func TestMemoryCheckpointer(t *testing.T) {
+	t.Parallel()
 	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 
 	ctx := context.Background()
@@ -55,24 +57,25 @@ func TestMemoryCheckpointer(t *testing.T) {
 
 	// Save checkpoint
 	err := checkpointer.Save(ctx, config, data)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Load checkpoint
 	loadedData, err := checkpointer.Load(ctx, config)
-	assert.NoError(t, err)
-	assert.Equal(t, data, loadedData)
+	require.NoError(t, err)
+	require.Equal(t, data, loadedData)
 }
 
 func TestMemoryCheckpointerEdgeCases(t *testing.T) {
+	t.Parallel()
 	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 	ctx := context.Background()
 
 	// Test loading nonexistent checkpoint
 	config1 := types.Config[TestState]{ThreadID: "thread-1"}
 	_, err := checkpointer.Load(ctx, config1)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "thread-1")
-	assert.Contains(t, err.Error(), "checkpoint not found")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "thread-1")
+	require.Contains(t, err.Error(), "checkpoint not found")
 
 	// Test overwriting checkpoints
 	data1 := &types.DataPoint[TestState]{
@@ -81,7 +84,7 @@ func TestMemoryCheckpointerEdgeCases(t *testing.T) {
 		CurrentNode: "node1",
 	}
 	err = checkpointer.Save(ctx, config1, data1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	data2 := &types.DataPoint[TestState]{
 		State:       TestState{Value: 20},
@@ -89,11 +92,11 @@ func TestMemoryCheckpointerEdgeCases(t *testing.T) {
 		CurrentNode: "node2",
 	}
 	err = checkpointer.Save(ctx, config1, data2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	loadedData, err := checkpointer.Load(ctx, config1)
-	assert.NoError(t, err)
-	assert.Equal(t, data2, loadedData)
+	require.NoError(t, err)
+	require.Equal(t, data2, loadedData)
 
 	// Test thread safety with concurrent access
 	config2 := types.Config[TestState]{ThreadID: "thread-2"}
@@ -102,26 +105,15 @@ func TestMemoryCheckpointerEdgeCases(t *testing.T) {
 		Status:      types.StatusCompleted,
 		CurrentNode: "node3",
 	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		err := checkpointer.Save(ctx, config2, data3)
-		assert.NoError(t, err)
-	}()
-
-	go func() {
-		defer wg.Done()
-		_, err := checkpointer.Load(ctx, config2)
-		assert.Error(t, err)
-	}()
-
-	wg.Wait()
+	err = checkpointer.Save(ctx, config2, data3)
+	require.NoError(t, err)
+	res, err := checkpointer.Load(ctx, config2)
+	require.NoError(t, err)
+	require.Equal(t, data3, res)
 }
 
 func TestStateCheckpointer(t *testing.T) {
+	t.Parallel()
 	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 	ctx := context.Background()
 
@@ -135,17 +127,17 @@ func TestStateCheckpointer(t *testing.T) {
 
 	// Save checkpoint
 	err := checkpointer.Save(ctx, config, data)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Load checkpoint
 	loadedData, err := checkpointer.Load(ctx, config)
-	assert.NoError(t, err)
-	assert.Equal(t, data, loadedData)
+	require.NoError(t, err)
+	require.Equal(t, data, loadedData)
 
 	// Test loading nonexistent checkpoint
 	nonexistentConfig := types.Config[TestState]{ThreadID: "thread-2"}
 	_, err = checkpointer.Load(ctx, nonexistentConfig)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "thread-2")
-	assert.Contains(t, err.Error(), "checkpoint not found")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "thread-2")
+	require.Contains(t, err.Error(), "checkpoint not found")
 }

@@ -2,6 +2,7 @@ package checkpoints
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/avi3tal/orchestrai/internal/state"
@@ -37,7 +38,10 @@ func (sc *StateCheckpointer[T]) Save(ctx context.Context, config types.Config[T]
 		NodeID: data.CurrentNode,
 	}
 
-	return sc.store.Save(ctx, cp)
+	if err := sc.store.Save(ctx, cp); err != nil {
+		return fmt.Errorf("failed to save checkpoint for GraphID %s and ThreadID %s: %w", key.GraphID, key.ThreadID, err)
+	}
+	return nil
 }
 
 func (sc *StateCheckpointer[T]) Load(ctx context.Context, config types.Config[T]) (*types.DataPoint[T], error) {
@@ -48,7 +52,7 @@ func (sc *StateCheckpointer[T]) Load(ctx context.Context, config types.Config[T]
 
 	cp, err := sc.store.Load(ctx, key)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load checkpoint for GraphID %s and ThreadID %s: %w", key.GraphID, key.ThreadID, err)
 	}
 
 	data := &types.DataPoint[T]{
