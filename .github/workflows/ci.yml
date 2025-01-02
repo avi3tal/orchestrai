@@ -31,10 +31,7 @@ jobs:
         with:
           version: v1.61
           args: --timeout=5m
-          # Only show new issues for pull requests
           only-new-issues: true
-          # Skip examples directory for now
-          skip-dirs: cmd/examples
 
   test:
     name: Build and Test
