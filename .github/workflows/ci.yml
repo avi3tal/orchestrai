@@ -18,6 +18,8 @@ jobs:
         with:
           go-version: '1.23'
           cache: true
+      - name: Download dependencies
+        run: go mod download
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
@@ -33,6 +35,10 @@ jobs:
         with:
           go-version: '1.23'
           cache: true
+      - name: Download dependencies
+        run: |
+          go mod download
+          go mod tidy
       - name: Build
         run: go build -v ./...
       - name: Test
@@ -47,9 +53,16 @@ jobs:
         with:
           go-version: '1.23'
           cache: true
+      - name: Download dependencies
+        run: |
+          go mod download
+          go mod tidy
       - name: Build examples
         run: |
           cd cmd/examples
           for d in */; do
-            (cd "$d" && go build -v)
+            if [ -d "$d" ]; then
+              echo "Building $d"
+              (cd "$d" && go build -v)
+            fi
           done

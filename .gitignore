@@ -1,21 +1,24 @@
-go.work
-go.work.sum
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
-# Test outputs
-coverage.out
-cover.cov
+# Test binary, built with `go test -c`
+*.test
 
-# macOS Specific
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
 .DS_Store
-
-# IDE
-.idea
-.vscode
-
-# dev
-.env
-vendor/*
-service-account.json
-
-embeddings/cybertron/models/*
-examples/cybertron-embedding-example/models/*
