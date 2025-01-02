@@ -20,16 +20,16 @@ type CheckpointMeta struct {
 	NodeQueue []string
 }
 
-type Checkpoint[T state.GraphState[T]] struct {
+type Checkpoint struct {
 	Key    CheckpointKey
 	Meta   CheckpointMeta
-	State  T
+	State  state.GraphState
 	NodeID string
 }
 
 // DataPoint Extended checkpoint data
-type DataPoint[T state.GraphState[T]] struct {
-	State       T
+type DataPoint struct {
+	State       state.GraphState
 	Status      NodeExecutionStatus
 	CurrentNode string
 	Steps       int
@@ -37,16 +37,16 @@ type DataPoint[T state.GraphState[T]] struct {
 }
 
 // Checkpointer handles state persistence with generic type
-type Checkpointer[T state.GraphState[T]] interface {
+type Checkpointer interface {
 	// Save persists the current state
-	Save(ctx context.Context, config Config[T], data *DataPoint[T]) error
+	Save(ctx context.Context, config Config, data *DataPoint) error
 	// Load retrieves a previously saved state
-	Load(ctx context.Context, config Config[T]) (*DataPoint[T], error)
+	Load(ctx context.Context, config Config) (*DataPoint, error)
 }
 
 // CheckpointStore interface defines persistent storage operations
-type CheckpointStore[T state.GraphState[T]] interface {
-	Save(ctx context.Context, checkpoint Checkpoint[T]) error
-	Load(ctx context.Context, key CheckpointKey) (*Checkpoint[T], error)
+type CheckpointStore interface {
+	Save(ctx context.Context, checkpoint Checkpoint) error
+	Load(ctx context.Context, key CheckpointKey) (*Checkpoint, error)
 	Delete(ctx context.Context, key CheckpointKey) error
 }

@@ -27,6 +27,8 @@ linters:
     - godot
     - forbidigo
     - err113
+    - ireturn
+    - wrapcheck
 
 linters-settings:
   cyclop:

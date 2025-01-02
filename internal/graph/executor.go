@@ -16,17 +16,17 @@ type NextNode struct {
 	Then   string // Optional post-processing node
 }
 
-type NextNodeInfo[T state.GraphState[T]] struct {
+type NextNodeInfo struct {
 	Target    NextNode
-	PrevState T
+	PrevState state.GraphState
 }
 
-func executeNode[T state.GraphState[T]](
+func executeNode(
 	ctx context.Context,
-	node NodeSpec[T],
-	state T,
-	config types.Config[T],
-) (NodeResponse[T], error) {
+	node NodeSpec,
+	state state.GraphState,
+	config types.Config,
+) (NodeResponse, error) {
 	maxAttempts := DefaultMaxRetries
 	if node.RetryPolicy != nil {
 		maxAttempts = node.RetryPolicy.MaxAttempts
@@ -44,23 +44,23 @@ func executeNode[T state.GraphState[T]](
 		}
 		lastErr = err
 	}
-	return NodeResponse[T]{}, fmt.Errorf("failed to execute node %s: %w", node.Name, lastErr)
+	return NodeResponse{}, fmt.Errorf("failed to execute node %s: %w", node.Name, lastErr)
 }
 
-func saveCheckpoint[T state.GraphState[T]](
+func saveCheckpoint(
 	ctx context.Context,
-	state T,
+	state state.GraphState,
 	node string,
 	status types.NodeExecutionStatus,
 	steps int,
-	config types.Config[T],
+	config types.Config,
 	nodeQueue ...string,
 ) error {
 	if config.Checkpointer == nil {
 		return nil
 	}
 
-	data := &types.DataPoint[T]{
+	data := &types.DataPoint{
 		State:       state,
 		CurrentNode: node,
 		Status:      status,
@@ -73,13 +73,13 @@ func saveCheckpoint[T state.GraphState[T]](
 	return nil
 }
 
-func loadOrInitCheckpoint[T state.GraphState[T]](
+func loadOrInitCheckpoint(
 	ctx context.Context,
 	entryPoint string,
-	initialState T,
-	config types.Config[T],
-) types.DataPoint[T] {
-	data := types.DataPoint[T]{
+	initialState state.GraphState,
+	config types.Config,
+) types.DataPoint {
+	data := types.DataPoint{
 		State:       initialState,
 		CurrentNode: entryPoint,
 		Status:      types.StatusReady,
@@ -107,7 +107,7 @@ func loadOrInitCheckpoint[T state.GraphState[T]](
 	return data
 }
 
-func checkExecutionLimits[T state.GraphState[T]](ctx context.Context, steps int, config types.Config[T]) error {
+func checkExecutionLimits(ctx context.Context, steps int, config types.Config) error {
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("execution cancelled: %w", ctx.Err())
@@ -121,12 +121,12 @@ func checkExecutionLimits[T state.GraphState[T]](ctx context.Context, steps int,
 	return nil
 }
 
-func execute[T state.GraphState[T]](
+func execute(
 	ctx context.Context,
-	graph *Graph[T],
-	initialState T,
-	config types.Config[T],
-) (T, error) {
+	graph *Graph,
+	initialState state.GraphState,
+	config types.Config,
+) (state.GraphState, error) {
 	if config.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(config.Timeout)*time.Second)
@@ -135,13 +135,13 @@ func execute[T state.GraphState[T]](
 
 	// Load or initialize the state and checkpoint
 	checkpoint := loadOrInitCheckpoint(ctx, graph.entryPoint, initialState, config)
-	state := checkpoint.State
+	st := checkpoint.State
 	steps := checkpoint.Steps
 	nodeQueue := checkpoint.NodeQueue
 
 	for len(nodeQueue) > 0 {
 		if err := checkExecutionLimits(ctx, steps, config); err != nil {
-			return state, err
+			return st, err
 		}
 
 		// Pop next node
@@ -155,31 +155,31 @@ func execute[T state.GraphState[T]](
 		// Execute current node
 		node, exists := graph.nodes[current]
 		if !exists {
-			return state, fmt.Errorf("node %s not found", current)
+			return st, fmt.Errorf("node %s not found", current)
 		}
 
-		resp, err := executeNode(ctx, node, state, config)
+		resp, err := executeNode(ctx, node, st, config)
 		if err != nil {
-			return state, err
+			return st, err
 		}
-		state = state.Merge(resp.State)
+		st = st.Merge(resp.State)
 
 		// Save the checkpoint after executing the node
 		if err = saveCheckpoint(
-			ctx, state, current, resp.Status, steps, config, nodeQueue...,
+			ctx, st, current, resp.Status, steps, config, nodeQueue...,
 		); err != nil {
-			return state, err
+			return st, err
 		}
 
 		// If the node is pending, return the current state and the pending error
 		if resp.Status == types.StatusPending {
-			return state, nil
+			return st, nil
 		}
 
 		// Queue next nodes
-		next, err := getNextNode(ctx, graph, current, state, config)
+		next, err := getNextNode(ctx, graph, current, st, config)
 		if err != nil {
-			return state, err
+			return st, err
 		}
 
 		// Queue Then node if exists
@@ -193,15 +193,15 @@ func execute[T state.GraphState[T]](
 		steps++
 	}
 
-	return state, nil
+	return st, nil
 }
 
-func getNextNode[T state.GraphState[T]](
+func getNextNode(
 	ctx context.Context,
-	graph *Graph[T],
+	graph *Graph,
 	currentNode string,
-	state T,
-	config types.Config[T],
+	state state.GraphState,
+	config types.Config,
 ) (NextNode, error) {
 	// Check branches first
 	for _, branch := range graph.branches[currentNode] {

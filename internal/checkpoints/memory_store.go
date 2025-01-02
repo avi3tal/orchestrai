@@ -6,22 +6,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/avi3tal/orchestrai/internal/state"
 	"github.com/avi3tal/orchestrai/internal/types"
 )
 
-type MemoryStore[T state.GraphState[T]] struct {
-	checkpoints map[types.CheckpointKey]*types.Checkpoint[T]
+type MemoryStore struct {
+	checkpoints map[types.CheckpointKey]*types.Checkpoint
 	mu          sync.RWMutex
 }
 
-func NewMemoryStore[T state.GraphState[T]]() *MemoryStore[T] {
-	return &MemoryStore[T]{
-		checkpoints: make(map[types.CheckpointKey]*types.Checkpoint[T]),
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{
+		checkpoints: make(map[types.CheckpointKey]*types.Checkpoint),
 	}
 }
 
-func (m *MemoryStore[T]) Save(_ context.Context, checkpoint types.Checkpoint[T]) error {
+func (m *MemoryStore) Save(_ context.Context, checkpoint types.Checkpoint) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -30,7 +29,7 @@ func (m *MemoryStore[T]) Save(_ context.Context, checkpoint types.Checkpoint[T])
 	return nil
 }
 
-func (m *MemoryStore[T]) Load(_ context.Context, key types.CheckpointKey) (*types.Checkpoint[T], error) {
+func (m *MemoryStore) Load(_ context.Context, key types.CheckpointKey) (*types.Checkpoint, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -41,7 +40,7 @@ func (m *MemoryStore[T]) Load(_ context.Context, key types.CheckpointKey) (*type
 	return cp, nil
 }
 
-func (m *MemoryStore[T]) Delete(_ context.Context, key types.CheckpointKey) error {
+func (m *MemoryStore) Delete(_ context.Context, key types.CheckpointKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

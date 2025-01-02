@@ -1,7 +1,7 @@
 package state
 
-type Mergeable[T any] interface {
-	Merge(T) T
+type Mergeable interface {
+	Merge(State) State
 }
 
 // State represents the base interface for any state type.
@@ -11,7 +11,10 @@ type State interface {
 }
 
 // GraphState Combine both interfaces for graph states.
-type GraphState[T any] interface {
-	State
-	Mergeable[T]
+type GraphState interface {
+	Validate() error
+	Merge(GraphState) GraphState
+	Clone() GraphState
+	Dump() ([]byte, error)
+	Load([]byte) (GraphState, error)
 }

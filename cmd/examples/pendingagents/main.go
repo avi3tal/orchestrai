@@ -11,22 +11,23 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-func AddAIMessage(text string) func(context.Context, state.MessagesState, types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
-	return func(_ context.Context, _ state.MessagesState, _ types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
+func AddAIMessage(text string) func(context.Context, state.GraphState, types.Config) (graph.NodeResponse, error) {
+	return func(_ context.Context, _ state.GraphState, _ types.Config) (graph.NodeResponse, error) {
 		ms := state.MessagesState{
 			Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, text)},
 		}
-		return graph.NodeResponse[state.MessagesState]{
+		return graph.NodeResponse{
 			State: ms,
 		}, nil
 	}
 }
 
-func PendingAgent(_ context.Context, st state.MessagesState, _ types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
+func PendingAgent(_ context.Context, other state.GraphState, _ types.Config) (graph.NodeResponse, error) {
+	st, _ := other.(state.MessagesState)
 	// Simulate pending condition
 	if len(st.Messages) < 3 {
 		// Return pending status if the condition is met
-		return graph.NodeResponse[state.MessagesState]{
+		return graph.NodeResponse{
 			State: state.MessagesState{
 				Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, "Sensitive tool requires approval")},
 			},
@@ -35,7 +36,7 @@ func PendingAgent(_ context.Context, st state.MessagesState, _ types.Config[stat
 	}
 
 	// Otherwise, complete the node
-	return graph.NodeResponse[state.MessagesState]{
+	return graph.NodeResponse{
 		State: state.MessagesState{
 			Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, "sensitive tool executed successfully")},
 		},
@@ -44,7 +45,7 @@ func PendingAgent(_ context.Context, st state.MessagesState, _ types.Config[stat
 }
 
 func main() {
-	g := graph.NewGraph[state.MessagesState]("pending-agent")
+	g := graph.NewGraph("pending-agent")
 
 	// Add nodes
 	_ = g.AddNode("StartNode", AddAIMessage("Hello, running actions"), nil)
@@ -57,10 +58,10 @@ func main() {
 	g.PrintGraph()
 
 	compiled, err := g.Compile(
-		graph.WithDebug[state.MessagesState](),
-		graph.WithCheckpointStore(checkpoints.NewMemoryStore[state.MessagesState]()),
-		graph.WithTimeout[state.MessagesState](30),
-		graph.WithMaxSteps[state.MessagesState](100),
+		graph.WithDebug(),
+		graph.WithCheckpointStore(checkpoints.NewMemoryStore()),
+		graph.WithTimeout(30),
+		graph.WithMaxSteps(100),
 	)
 	if err != nil {
 		panic(err)
@@ -71,12 +72,16 @@ func main() {
 	}
 
 	// First run
-	pendingState, err := compiled.Run(context.Background(), initialState, graph.WithThreadID[state.MessagesState]("thread-1"))
+	pendingState, err := compiled.Run(context.Background(), initialState, graph.WithThreadID("thread-1"))
 	if err != nil {
 		panic(err)
 	}
+	ps, ok := pendingState.(state.MessagesState)
+	if !ok {
+		panic("invalid state type")
+	}
 
-	for _, msg := range pendingState.Messages {
+	for _, msg := range ps.Messages {
 		fmt.Printf("\t%s: %s\n", msg.Role, msg.Parts[0].(llms.TextContent).Text)
 	}
 
@@ -84,12 +89,17 @@ func main() {
 	resumeState := state.MessagesState{
 		Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeHuman, "Approved message")},
 	}
-	finalState, err := compiled.Run(context.Background(), resumeState, graph.WithThreadID[state.MessagesState]("thread-1"))
+	finalState, err := compiled.Run(context.Background(), resumeState, graph.WithThreadID("thread-1"))
 	if err != nil {
 		panic(err)
 	}
 
-	for _, msg := range finalState.Messages {
+	fs, ok := finalState.(state.MessagesState)
+	if !ok {
+		panic("invalid state type")
+	}
+
+	for _, msg := range fs.Messages {
 		fmt.Printf("\t%s: %s\n", msg.Role, msg.Parts[0].(llms.TextContent).Text)
 	}
 }

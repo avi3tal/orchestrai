@@ -19,7 +19,7 @@ type EdgeInfo struct {
 	Metadata map[string]any
 }
 
-func (g *Graph[T]) GetGraphInfo() *Info {
+func (g *Graph) GetGraphInfo() *Info {
 	info := &Info{
 		Nodes: make([]string, 0, len(g.nodes)),
 	}
@@ -75,7 +75,7 @@ func (g *Graph[T]) GetGraphInfo() *Info {
 	return info
 }
 
-func (g *Graph[T]) PrintGraph() {
+func (g *Graph) PrintGraph() {
 	info := g.GetGraphInfo()
 
 	fmt.Println("Graph Structure:")

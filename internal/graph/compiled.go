@@ -9,13 +9,13 @@ import (
 )
 
 // CompiledGraph represents a validated and executable graph
-type CompiledGraph[T state.GraphState[T]] struct {
-	graph  *Graph[T]
-	config types.Config[T]
+type CompiledGraph struct {
+	graph  *Graph
+	config types.Config
 }
 
 // Compile validates and compiles the graph for execution
-func (g *Graph[T]) Compile(opt ...CompilationOption[T]) (*CompiledGraph[T], error) {
+func (g *Graph) Compile(opt ...CompilationOption) (*CompiledGraph, error) {
 	// Validate the graph before compiling
 	if err := g.Validate(); err != nil {
 		return nil, fmt.Errorf("graph validation failed: %w", err)
@@ -24,16 +24,16 @@ func (g *Graph[T]) Compile(opt ...CompilationOption[T]) (*CompiledGraph[T], erro
 	g.compiled = true
 
 	// Create a new configuration for the compiled graph
-	config := NewConfig[T](g.graphID, opt...)
+	config := NewConfig(g.graphID, opt...)
 
-	return &CompiledGraph[T]{
+	return &CompiledGraph{
 		graph:  g,
 		config: config,
 	}, nil
 }
 
 // Run executes the compiled graph with the provided initial state
-func (cg *CompiledGraph[T]) Run(ctx context.Context, initialState T, opt ...ExecutionOption[T]) (T, error) {
+func (cg *CompiledGraph) Run(ctx context.Context, initialState state.GraphState, opt ...ExecutionOption) (state.GraphState, error) {
 	// Apply execution options
 	config := cg.config.Clone()
 	for _, o := range opt {

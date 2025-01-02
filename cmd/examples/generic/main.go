@@ -11,19 +11,19 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-func AddAIMessage(text string) func(context.Context, state.MessagesState, types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
-	return func(_ context.Context, _ state.MessagesState, _ types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
+func AddAIMessage(text string) func(context.Context, state.GraphState, types.Config) (graph.NodeResponse, error) {
+	return func(_ context.Context, _ state.GraphState, _ types.Config) (graph.NodeResponse, error) {
 		ms := state.MessagesState{
 			Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, text)},
 		}
-		return graph.NodeResponse[state.MessagesState]{
+		return graph.NodeResponse{
 			State: ms,
 		}, nil
 	}
 }
 
 func main() {
-	g := graph.NewGraph[state.MessagesState]("pending-agents")
+	g := graph.NewGraph("pending-agents")
 
 	// Add nodes
 	if err := g.AddNode("agentA", AddAIMessage("Hello"), nil); err != nil {
@@ -42,8 +42,12 @@ func main() {
 	if err := g.AddConditionalEdge(
 		"agentA",
 		[]string{"agentB", graph.END},
-		func(ctx context.Context, state state.MessagesState, cfg types.Config[state.MessagesState]) string {
-			if len(state.Messages) > 5 {
+		func(ctx context.Context, other state.GraphState, cfg types.Config) string {
+			o, ok := other.(state.MessagesState)
+			if !ok {
+				return graph.END
+			}
+			if len(o.Messages) > 5 {
 				return graph.END
 			}
 			return "agentB"
@@ -60,10 +64,10 @@ func main() {
 	g.PrintGraph()
 
 	compiled, err := g.Compile(
-		graph.WithDebug[state.MessagesState](),
-		graph.WithCheckpointStore(checkpoints.NewMemoryStore[state.MessagesState]()),
-		graph.WithTimeout[state.MessagesState](30),
-		graph.WithMaxSteps[state.MessagesState](100),
+		graph.WithDebug(),
+		graph.WithCheckpointStore(checkpoints.NewMemoryStore()),
+		graph.WithTimeout(30),
+		graph.WithMaxSteps(100),
 	)
 	if err != nil {
 		panic(err)
@@ -73,7 +77,7 @@ func main() {
 		Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeHuman, "Hello my name is Bowie")},
 	}
 
-	finalState, err := compiled.Run(context.Background(), initialState, graph.WithThreadID[state.MessagesState]("thread-1"))
+	finalState, err := compiled.Run(context.Background(), initialState, graph.WithThreadID("thread-1"))
 	if err != nil {
 		panic(err)
 	}

@@ -5,28 +5,27 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/avi3tal/orchestrai/internal/state"
 	"github.com/avi3tal/orchestrai/internal/types"
 )
 
 // StateCheckpointer manages execution state persistence
-type StateCheckpointer[T state.GraphState[T]] struct {
-	store types.CheckpointStore[T]
+type StateCheckpointer struct {
+	store types.CheckpointStore
 }
 
-func NewStateCheckpointer[T state.GraphState[T]](store types.CheckpointStore[T]) *StateCheckpointer[T] {
-	return &StateCheckpointer[T]{
+func NewStateCheckpointer(store types.CheckpointStore) *StateCheckpointer {
+	return &StateCheckpointer{
 		store: store,
 	}
 }
 
-func (sc *StateCheckpointer[T]) Save(ctx context.Context, config types.Config[T], data *types.DataPoint[T]) error {
+func (sc *StateCheckpointer) Save(ctx context.Context, config types.Config, data *types.DataPoint) error {
 	key := types.CheckpointKey{
 		GraphID:  config.GraphID,
 		ThreadID: config.ThreadID,
 	}
 
-	cp := types.Checkpoint[T]{
+	cp := types.Checkpoint{
 		Key: key,
 		Meta: types.CheckpointMeta{
 			CreatedAt: time.Now(),
@@ -44,7 +43,7 @@ func (sc *StateCheckpointer[T]) Save(ctx context.Context, config types.Config[T]
 	return nil
 }
 
-func (sc *StateCheckpointer[T]) Load(ctx context.Context, config types.Config[T]) (*types.DataPoint[T], error) {
+func (sc *StateCheckpointer) Load(ctx context.Context, config types.Config) (*types.DataPoint, error) {
 	key := types.CheckpointKey{
 		GraphID:  config.GraphID,
 		ThreadID: config.ThreadID,
@@ -55,7 +54,7 @@ func (sc *StateCheckpointer[T]) Load(ctx context.Context, config types.Config[T]
 		return nil, fmt.Errorf("failed to load checkpoint for GraphID %s and ThreadID %s: %w", key.GraphID, key.ThreadID, err)
 	}
 
-	data := &types.DataPoint[T]{
+	data := &types.DataPoint{
 		State:       cp.State,
 		CurrentNode: cp.NodeID,
 		Status:      cp.Meta.Status,

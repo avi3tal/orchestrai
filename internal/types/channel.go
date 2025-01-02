@@ -7,9 +7,9 @@ import (
 )
 
 // Channel represents state management operations.
-type Channel[T state.GraphState[T]] interface {
+type Channel interface {
 	// Read reads the current state from the channel
-	Read(ctx context.Context, config Config[T]) (T, error)
+	Read(ctx context.Context, config Config) (any, error)
 	// Write writes a new state to the channel
-	Write(ctx context.Context, value T, config Config[T]) error
+	Write(ctx context.Context, value state.GraphState, config Config) error
 }

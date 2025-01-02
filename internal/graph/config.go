@@ -2,7 +2,6 @@ package graph
 
 import (
 	"github.com/avi3tal/orchestrai/internal/checkpoints"
-	"github.com/avi3tal/orchestrai/internal/state"
 	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/google/uuid"
 )
@@ -12,8 +11,8 @@ const (
 	defaultTimeout  = 60
 )
 
-func NewConfig[T state.GraphState[T]](graphID string, opt ...CompilationOption[T]) types.Config[T] {
-	opts := types.Config[T]{
+func NewConfig(graphID string, opt ...CompilationOption) types.Config {
+	opts := types.Config{
 		GraphID:  graphID,
 		ThreadID: uuid.New().String(), // generate default thread ID
 		MaxSteps: defaultMaxSteps,
@@ -25,48 +24,48 @@ func NewConfig[T state.GraphState[T]](graphID string, opt ...CompilationOption[T
 	return opts
 }
 
-type CompilationOption[T state.GraphState[T]] func(*types.Config[T])
+type CompilationOption func(*types.Config)
 
 // WithMaxSteps sets the maximum number of steps to execute
-func WithMaxSteps[T state.GraphState[T]](steps int) CompilationOption[T] {
-	return func(c *types.Config[T]) {
+func WithMaxSteps(steps int) CompilationOption {
+	return func(c *types.Config) {
 		c.MaxSteps = steps
 	}
 }
 
 // WithTimeout sets the execution timeout in seconds
-func WithTimeout[T state.GraphState[T]](timeout int) CompilationOption[T] {
-	return func(c *types.Config[T]) {
+func WithTimeout(timeout int) CompilationOption {
+	return func(c *types.Config) {
 		c.Timeout = timeout
 	}
 }
 
 // WithCheckpointStore sets the checkpointer for state persistence
-func WithCheckpointStore[T state.GraphState[T]](store types.CheckpointStore[T]) CompilationOption[T] {
-	return func(c *types.Config[T]) {
+func WithCheckpointStore(store types.CheckpointStore) CompilationOption {
+	return func(c *types.Config) {
 		c.Checkpointer = checkpoints.NewStateCheckpointer(store)
 	}
 }
 
 // WithDebug enables execution tracing
-func WithDebug[T state.GraphState[T]]() CompilationOption[T] {
-	return func(c *types.Config[T]) {
+func WithDebug() CompilationOption {
+	return func(c *types.Config) {
 		c.Debug = true
 	}
 }
 
-type ExecutionOption[T state.GraphState[T]] func(*types.Config[T])
+type ExecutionOption func(*types.Config)
 
 // WithThreadID sets the unique thread identifier
-func WithThreadID[T state.GraphState[T]](id string) ExecutionOption[T] {
-	return func(c *types.Config[T]) {
+func WithThreadID(id string) ExecutionOption {
+	return func(c *types.Config) {
 		c.ThreadID = id
 	}
 }
 
 // WithConfigurable sets additional configuration parameters
-func WithConfigurable[T state.GraphState[T]](config map[string]any) ExecutionOption[T] {
-	return func(c *types.Config[T]) {
+func WithConfigurable(config map[string]any) ExecutionOption {
+	return func(c *types.Config) {
 		c.Configurable = config
 	}
 }
