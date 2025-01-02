@@ -3,9 +3,12 @@ package dag
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 // Constants for special nodes
@@ -14,25 +17,16 @@ const (
 	END   = "END"
 )
 
-// NodeExecutionStatus represents the current state of node execution
-type NodeExecutionStatus string
-
-const (
-	StatusCompleted NodeExecutionStatus = "completed"
-	StatusPending   NodeExecutionStatus = "pending" // Waiting for user input
-	StatusReady     NodeExecutionStatus = "ready"   // Ready to execute
-)
-
 // NodeResponse encapsulates the execution result
-type NodeResponse[T GraphState[T]] struct {
+type NodeResponse[T state.GraphState[T]] struct {
 	State  T
-	Status NodeExecutionStatus
+	Status types.NodeExecutionStatus
 }
 
 // NodeSpec represents a node's specification
-type NodeSpec[T GraphState[T]] struct {
+type NodeSpec[T state.GraphState[T]] struct {
 	Name        string
-	Function    func(context.Context, T, Config[T]) (NodeResponse[T], error)
+	Function    func(context.Context, T, types.Config[T]) (NodeResponse[T], error)
 	Metadata    map[string]any
 	RetryPolicy *RetryPolicy
 }
@@ -51,27 +45,27 @@ type Edge struct {
 }
 
 // Branch represents a conditional branch in the graph
-type Branch[T GraphState[T]] struct {
-	Path     func(context.Context, T, Config[T]) string
+type Branch[T state.GraphState[T]] struct {
+	Path     func(context.Context, T, types.Config[T]) string
 	Then     string
 	Metadata map[string]any
 }
 
 // Graph represents the base graph structure
-type Graph[T GraphState[T]] struct {
+type Graph[T state.GraphState[T]] struct {
 	graphID  string
 	nodes    map[string]NodeSpec[T]
 	edges    []Edge
 	branches map[string][]Branch[T]
-	channels map[string]Channel[T]
+	channels map[string]types.Channel[T]
 
 	entryPoint string
 	compiled   bool
 }
 
-type GraphOption[T GraphState[T]] func(*Graph[T])
+type GraphOption[T state.GraphState[T]] func(*Graph[T])
 
-func WithGraphID[T GraphState[T]](id string) GraphOption[T] {
+func WithGraphID[T state.GraphState[T]](id string) GraphOption[T] {
 	return func(g *Graph[T]) {
 		g.graphID = id
 	}
@@ -79,7 +73,7 @@ func WithGraphID[T GraphState[T]](id string) GraphOption[T] {
 }
 
 // NewGraph creates a new graph instance
-func NewGraph[T GraphState[T]](name string, opt ...GraphOption[T]) *Graph[T] {
+func NewGraph[T state.GraphState[T]](name string, opt ...GraphOption[T]) *Graph[T] {
 	graphName := "graph"
 	if name != "" {
 		graphName = name
@@ -89,7 +83,7 @@ func NewGraph[T GraphState[T]](name string, opt ...GraphOption[T]) *Graph[T] {
 		graphID:  uuid.New().String(),
 		nodes:    make(map[string]NodeSpec[T]),
 		branches: make(map[string][]Branch[T]),
-		channels: make(map[string]Channel[T]),
+		channels: make(map[string]types.Channel[T]),
 	}
 	for _, o := range opt {
 		o(&g)
@@ -103,7 +97,7 @@ func NewGraph[T GraphState[T]](name string, opt ...GraphOption[T]) *Graph[T] {
 }
 
 // AddNode adds a new node to the graph
-func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, Config[T]) (NodeResponse[T], error), metadata map[string]any) error {
+func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config[T]) (NodeResponse[T], error), metadata map[string]any) error {
 	if g.compiled {
 		return fmt.Errorf("cannot add node to compiled graph")
 	}
@@ -141,7 +135,7 @@ func (g *Graph[T]) AddEdge(from, to string, metadata map[string]any) error {
 }
 
 // AddBranch adds a conditional branch from a node
-func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, Config[T]) string, then string, metadata map[string]any) error {
+func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, types.Config[T]) string, then string, metadata map[string]any) error {
 	if g.compiled {
 		return fmt.Errorf("cannot add branch to compiled graph")
 	}
@@ -169,7 +163,7 @@ func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, Config[T
 }
 
 // AddChannel adds a state management channel
-func (g *Graph[T]) AddChannel(name string, channel Channel[T]) error {
+func (g *Graph[T]) AddChannel(name string, channel types.Channel[T]) error {
 	if g.compiled {
 		return fmt.Errorf("cannot add channel to compiled graph")
 	}
@@ -183,7 +177,12 @@ func (g *Graph[T]) AddChannel(name string, channel Channel[T]) error {
 }
 
 // AddConditionalEdge adds a conditional edge to the graph
-func (g *Graph[T]) AddConditionalEdge(from string, possibleTargets []string, condition func(context.Context, T, Config[T]) string, metadata map[string]any) error {
+func (g *Graph[T]) AddConditionalEdge(
+	from string,
+	possibleTargets []string,
+	condition func(context.Context, T, types.Config[T]) string,
+	metadata map[string]any,
+) error {
 	// Validate nodes first
 	if err := g.validateEdgeNodes(from, possibleTargets); err != nil {
 		return err
@@ -197,7 +196,7 @@ func (g *Graph[T]) AddConditionalEdge(from string, possibleTargets []string, con
 
 	// Create branch with validated condition
 	return g.AddBranch(from,
-		func(ctx context.Context, state T, cfg Config[T]) string {
+		func(ctx context.Context, state T, cfg types.Config[T]) string {
 			next := condition(ctx, state, cfg)
 			// Validate target is allowed
 			for _, target := range possibleTargets {
@@ -256,35 +255,6 @@ func (g *Graph[T]) SetEntryPoint(name string) error {
 	return nil
 }
 
-// Validate Updated validation methods
-//func (g *Graph[T]) Validate() error {
-//	if g.entryPoint == "" {
-//		return fmt.Errorf("entry point not set")
-//	}
-//
-//	// Check if entry point exists
-//	if _, exists := g.nodes[g.entryPoint]; !exists {
-//		return fmt.Errorf("entry point node %s does not exist", g.entryPoint)
-//	}
-//
-//	// Validate all nodes have a path to END
-//	unvisited := make(map[string]bool)
-//	for node := range g.nodes {
-//		unvisited[node] = true
-//	}
-//
-//	if !g.hasPathToEnd(g.entryPoint, unvisited) {
-//		return fmt.Errorf("no path to END from entry point %s", g.entryPoint)
-//	}
-//
-//	// Check for unreachable nodes
-//	for node := range unvisited {
-//		return fmt.Errorf("node %s is unreachable from entry point", node)
-//	}
-//
-//	return nil
-//}
-
 func (g *Graph[T]) Validate() error {
 	if g.entryPoint == "" {
 		return fmt.Errorf("entry point not set")
@@ -330,35 +300,3 @@ func (g *Graph[T]) dfs(node string, visited map[string]bool) map[string]bool {
 
 	return reachable
 }
-
-//func (g *Graph[T]) hasPathToEnd(node string, unvisited map[string]bool) bool {
-//	if node == END {
-//		return true
-//	}
-//
-//	delete(unvisited, node)
-//
-//	// Check direct edges
-//	for _, edge := range g.edges {
-//		if edge.From == node {
-//			// Copy unvisited for each path to prevent cross-path interference
-//			pathUnvisited := make(map[string]bool)
-//			for k, v := range unvisited {
-//				pathUnvisited[k] = v
-//			}
-//
-//			if g.hasPathToEnd(edge.To, pathUnvisited) {
-//				// Update main unvisited map with explored path
-//				for k := range unvisited {
-//					if !pathUnvisited[k] {
-//						delete(unvisited, k)
-//					}
-//				}
-//				return true
-//			}
-//		}
-//	}
-//
-//	// Return false if no valid path found
-//	return false
-//}

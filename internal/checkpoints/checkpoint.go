@@ -1,39 +1,33 @@
-package dag
+package checkpoints
 
 import (
 	"context"
 	"time"
+
+	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/internal/types"
 )
 
-// CheckpointData Extended checkpoint data
-type CheckpointData[T GraphState[T]] struct {
-	State       T
-	Status      NodeExecutionStatus
-	CurrentNode string
-	Steps       int
-	NodeQueue   []string
-}
-
 // StateCheckpointer manages execution state persistence
-type StateCheckpointer[T GraphState[T]] struct {
-	store CheckpointStore[T]
+type StateCheckpointer[T state.GraphState[T]] struct {
+	store types.CheckpointStore[T]
 }
 
-func NewStateCheckpointer[T GraphState[T]](store CheckpointStore[T]) *StateCheckpointer[T] {
+func NewStateCheckpointer[T state.GraphState[T]](store types.CheckpointStore[T]) *StateCheckpointer[T] {
 	return &StateCheckpointer[T]{
 		store: store,
 	}
 }
 
-func (sc *StateCheckpointer[T]) Save(ctx context.Context, config Config[T], data *CheckpointData[T]) error {
-	key := CheckpointKey{
+func (sc *StateCheckpointer[T]) Save(ctx context.Context, config types.Config[T], data *types.DataPoint[T]) error {
+	key := types.CheckpointKey{
 		GraphID:  config.GraphID,
 		ThreadID: config.ThreadID,
 	}
 
-	cp := Checkpoint[T]{
+	cp := types.Checkpoint[T]{
 		Key: key,
-		Meta: CheckpointMeta{
+		Meta: types.CheckpointMeta{
 			CreatedAt: time.Now(),
 			Steps:     data.Steps,
 			Status:    data.Status,
@@ -46,8 +40,8 @@ func (sc *StateCheckpointer[T]) Save(ctx context.Context, config Config[T], data
 	return sc.store.Save(ctx, cp)
 }
 
-func (sc *StateCheckpointer[T]) Load(ctx context.Context, config Config[T]) (*CheckpointData[T], error) {
-	key := CheckpointKey{
+func (sc *StateCheckpointer[T]) Load(ctx context.Context, config types.Config[T]) (*types.DataPoint[T], error) {
+	key := types.CheckpointKey{
 		GraphID:  config.GraphID,
 		ThreadID: config.ThreadID,
 	}
@@ -57,7 +51,7 @@ func (sc *StateCheckpointer[T]) Load(ctx context.Context, config Config[T]) (*Ch
 		return nil, err
 	}
 
-	data := &CheckpointData[T]{
+	data := &types.DataPoint[T]{
 		State:       cp.State,
 		CurrentNode: cp.NodeID,
 		Status:      cp.Meta.Status,

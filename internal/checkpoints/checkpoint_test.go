@@ -1,4 +1,4 @@
-package dag
+package checkpoints
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,10 +46,10 @@ func TestMemoryCheckpointer(t *testing.T) {
 	checkpointer := NewStateCheckpointer[TestState](NewMemoryStore[TestState]())
 
 	ctx := context.Background()
-	config := Config[TestState]{ThreadID: "thread-1"}
-	data := &CheckpointData[TestState]{
+	config := types.Config[TestState]{ThreadID: "thread-1"}
+	data := &types.DataPoint[TestState]{
 		State:       TestState{Value: 10},
-		Status:      StatusCompleted,
+		Status:      types.StatusCompleted,
 		CurrentNode: "node1",
 	}
 
@@ -67,24 +68,24 @@ func TestMemoryCheckpointerEdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	// Test loading nonexistent checkpoint
-	config1 := Config[TestState]{ThreadID: "thread-1"}
+	config1 := types.Config[TestState]{ThreadID: "thread-1"}
 	_, err := checkpointer.Load(ctx, config1)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "thread-1")
 	assert.Contains(t, err.Error(), "checkpoint not found")
 
 	// Test overwriting checkpoints
-	data1 := &CheckpointData[TestState]{
+	data1 := &types.DataPoint[TestState]{
 		State:       TestState{Value: 10},
-		Status:      StatusCompleted,
+		Status:      types.StatusCompleted,
 		CurrentNode: "node1",
 	}
 	err = checkpointer.Save(ctx, config1, data1)
 	assert.NoError(t, err)
 
-	data2 := &CheckpointData[TestState]{
+	data2 := &types.DataPoint[TestState]{
 		State:       TestState{Value: 20},
-		Status:      StatusPending,
+		Status:      types.StatusPending,
 		CurrentNode: "node2",
 	}
 	err = checkpointer.Save(ctx, config1, data2)
@@ -95,10 +96,10 @@ func TestMemoryCheckpointerEdgeCases(t *testing.T) {
 	assert.Equal(t, data2, loadedData)
 
 	// Test thread safety with concurrent access
-	config2 := Config[TestState]{ThreadID: "thread-2"}
-	data3 := &CheckpointData[TestState]{
+	config2 := types.Config[TestState]{ThreadID: "thread-2"}
+	data3 := &types.DataPoint[TestState]{
 		State:       TestState{Value: 30},
-		Status:      StatusCompleted,
+		Status:      types.StatusCompleted,
 		CurrentNode: "node3",
 	}
 
@@ -125,10 +126,10 @@ func TestStateCheckpointer(t *testing.T) {
 	ctx := context.Background()
 
 	// Test saving and loading checkpoints
-	config := Config[TestState]{ThreadID: "thread-1"}
-	data := &CheckpointData[TestState]{
+	config := types.Config[TestState]{ThreadID: "thread-1"}
+	data := &types.DataPoint[TestState]{
 		State:       TestState{Value: 100},
-		Status:      StatusPending,
+		Status:      types.StatusPending,
 		CurrentNode: "node1",
 	}
 
@@ -142,7 +143,7 @@ func TestStateCheckpointer(t *testing.T) {
 	assert.Equal(t, data, loadedData)
 
 	// Test loading nonexistent checkpoint
-	nonexistentConfig := Config[TestState]{ThreadID: "thread-2"}
+	nonexistentConfig := types.Config[TestState]{ThreadID: "thread-2"}
 	_, err = checkpointer.Load(ctx, nonexistentConfig)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "thread-2")

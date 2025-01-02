@@ -2,42 +2,28 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
+
+	"github.com/avi3tal/orchestrai/internal/checkpoints"
 	"github.com/avi3tal/orchestrai/internal/dag"
+	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/tmc/langchaingo/llms"
 )
 
-type MessagesState struct {
-	Messages []llms.MessageContent
-}
-
-func (m MessagesState) Validate() error {
-	if len(m.Messages) == 0 {
-		return errors.New("no messages")
-	}
-	return nil
-}
-
-func (m MessagesState) Merge(other MessagesState) MessagesState {
-	return MessagesState{
-		Messages: append(m.Messages, other.Messages...),
-	}
-}
-
-func AddAIMessage(text string) func(context.Context, MessagesState, dag.Config[MessagesState]) (dag.NodeResponse[MessagesState], error) {
-	return func(_ context.Context, state MessagesState, c dag.Config[MessagesState]) (dag.NodeResponse[MessagesState], error) {
-		ms := MessagesState{
+func AddAIMessage(text string) func(context.Context, state.MessagesState, types.Config[state.MessagesState]) (dag.NodeResponse[state.MessagesState], error) {
+	return func(_ context.Context, _ state.MessagesState, _ types.Config[state.MessagesState]) (dag.NodeResponse[state.MessagesState], error) {
+		ms := state.MessagesState{
 			Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, text)},
 		}
-		return dag.NodeResponse[MessagesState]{
+		return dag.NodeResponse[state.MessagesState]{
 			State: ms,
 		}, nil
 	}
 }
 
 func main() {
-	g := dag.NewGraph[MessagesState]("pending-agents")
+	g := dag.NewGraph[state.MessagesState]("pending-agents")
 
 	// Add nodes
 	if err := g.AddNode("agentA", AddAIMessage("Hello"), nil); err != nil {
@@ -56,7 +42,7 @@ func main() {
 	if err := g.AddConditionalEdge(
 		"agentA",
 		[]string{"agentB", dag.END},
-		func(ctx context.Context, state MessagesState, cfg dag.Config[MessagesState]) string {
+		func(ctx context.Context, state state.MessagesState, cfg types.Config[state.MessagesState]) string {
 			if len(state.Messages) > 5 {
 				return dag.END
 			}
@@ -74,20 +60,20 @@ func main() {
 	g.PrintGraph()
 
 	compiled, err := g.Compile(
-		dag.WithDebug[MessagesState](),
-		dag.WithCheckpointStore(dag.NewMemoryStore[MessagesState]()),
-		dag.WithTimeout[MessagesState](30),
-		dag.WithMaxSteps[MessagesState](100),
+		dag.WithDebug[state.MessagesState](),
+		dag.WithCheckpointStore(checkpoints.NewMemoryStore[state.MessagesState]()),
+		dag.WithTimeout[state.MessagesState](30),
+		dag.WithMaxSteps[state.MessagesState](100),
 	)
 	if err != nil {
 		panic(err)
 	}
 
-	initialState := MessagesState{
+	initialState := state.MessagesState{
 		Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeHuman, "Hello my name is Bowie")},
 	}
 
-	finalState, err := compiled.Run(context.Background(), initialState, dag.WithThreadID[MessagesState]("thread-1"))
+	finalState, err := compiled.Run(context.Background(), initialState, dag.WithThreadID[state.MessagesState]("thread-1"))
 	if err != nil {
 		panic(err)
 	}

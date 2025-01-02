@@ -3,12 +3,15 @@ package dag
 import (
 	"context"
 	"fmt"
+
+	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/internal/types"
 )
 
 // CompiledGraph represents a validated and executable graph
-type CompiledGraph[T GraphState[T]] struct {
+type CompiledGraph[T state.GraphState[T]] struct {
 	graph  *Graph[T]
-	config Config[T]
+	config types.Config[T]
 }
 
 // Compile validates and compiles the graph for execution

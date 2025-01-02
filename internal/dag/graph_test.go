@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/avi3tal/orchestrai/internal/checkpoints"
+	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,14 +53,14 @@ func TestSimpleGraphExecution(t *testing.T) {
 	g := NewGraph[SimpleState]("simple-graph")
 
 	// Add nodes that increment the value
-	require.NoError(t, g.AddNode("add1", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
+	require.NoError(t, g.AddNode("add1", func(ctx context.Context, s SimpleState, c types.Config[SimpleState]) (NodeResponse[SimpleState], error) {
 		s.Value++
-		return NodeResponse[SimpleState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("add2", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
+	require.NoError(t, g.AddNode("add2", func(ctx context.Context, s SimpleState, c types.Config[SimpleState]) (NodeResponse[SimpleState], error) {
 		s.Value += 2
-		return NodeResponse[SimpleState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	// Add direct edges
@@ -79,25 +81,25 @@ func TestConditionalGraphExecution(t *testing.T) {
 	g := NewGraph[SimpleState]("conditional-graph")
 
 	// Add nodes
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
-		return NodeResponse[SimpleState]{State: s, Status: StatusCompleted}, nil
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s SimpleState, c types.Config[SimpleState]) (NodeResponse[SimpleState], error) {
+		return NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("double", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
+	require.NoError(t, g.AddNode("double", func(ctx context.Context, s SimpleState, c types.Config[SimpleState]) (NodeResponse[SimpleState], error) {
 		s.Value *= 2
-		return NodeResponse[SimpleState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("triple", func(ctx context.Context, s SimpleState, c Config[SimpleState]) (NodeResponse[SimpleState], error) {
+	require.NoError(t, g.AddNode("triple", func(ctx context.Context, s SimpleState, c types.Config[SimpleState]) (NodeResponse[SimpleState], error) {
 		s.Value *= 3
-		return NodeResponse[SimpleState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	// Connect all possible paths
 	require.NoError(t, g.AddConditionalEdge(
 		"start",
 		[]string{"double", "triple", END},
-		func(ctx context.Context, s SimpleState, c Config[SimpleState]) string {
+		func(ctx context.Context, s SimpleState, c types.Config[SimpleState]) string {
 			if s.Value < 0 {
 				return END
 			}
@@ -140,21 +142,21 @@ func TestConditionalGraphExecution(t *testing.T) {
 // Test graph with checkpointing
 func TestCheckpointedGraphExecution(t *testing.T) {
 	g := NewGraph[ComplexState]("checkpoint-graph")
-	store := NewMemoryStore[ComplexState]()
+	store := checkpoints.NewMemoryStore[ComplexState]()
 
 	// Add nodes with artificial delays
-	require.NoError(t, g.AddNode("step1", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("step1", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		time.Sleep(100 * time.Millisecond)
 		s.Text = "Step 1 complete"
 		s.Numbers = append(s.Numbers, 1)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("step2", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("step2", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		time.Sleep(100 * time.Millisecond)
 		s.Text = "Step 2 complete"
 		s.Numbers = append(s.Numbers, 2)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	require.NoError(t, g.AddEdge("step1", "step2", nil))
@@ -171,7 +173,7 @@ func TestCheckpointedGraphExecution(t *testing.T) {
 	assert.ElementsMatch(t, []int{1, 2}, result.Numbers)
 
 	// Verify checkpoint exists
-	saved, err := store.Load(context.Background(), CheckpointKey{ThreadID: "test-checkpoint", GraphID: g.graphID})
+	saved, err := store.Load(context.Background(), types.CheckpointKey{ThreadID: "test-checkpoint", GraphID: g.graphID})
 	require.NoError(t, err)
 	assert.Equal(t, result, saved.State)
 }
@@ -179,19 +181,19 @@ func TestCheckpointedGraphExecution(t *testing.T) {
 func TestBranchWithThenNode(t *testing.T) {
 	g := NewGraph[ComplexState]("then-branch")
 
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 1)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("process", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("process", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 2)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("cleanup", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("cleanup", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 3)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	require.NoError(t, g.AddEdge("start", "process", nil))
@@ -199,7 +201,7 @@ func TestBranchWithThenNode(t *testing.T) {
 	require.NoError(t, g.AddEdge("process", END, nil))
 	require.NoError(t, g.AddEdge("cleanup", END, nil))
 
-	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) string {
 		return "process"
 	}, "cleanup", nil))
 
@@ -216,18 +218,18 @@ func TestBranchWithThenNode(t *testing.T) {
 func TestMultipleBranches(t *testing.T) {
 	g := NewGraph[ComplexState]("multi-branch")
 
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("pathA", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("pathA", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 1)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("pathB", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("pathB", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 2)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	require.NoError(t, g.AddEdge("start", "pathA", nil))
@@ -236,7 +238,7 @@ func TestMultipleBranches(t *testing.T) {
 	require.NoError(t, g.AddEdge("pathB", END, nil))
 
 	// First branch based on configurable
-	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) string {
 		if c.Configurable["path"] == "A" {
 			return "pathA"
 		}
@@ -244,7 +246,7 @@ func TestMultipleBranches(t *testing.T) {
 	}, "", nil))
 
 	// Second branch based on state
-	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+	require.NoError(t, g.AddBranch("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) string {
 		if len(s.Numbers) > 0 {
 			return "pathA"
 		}
@@ -272,19 +274,19 @@ func TestBranchGraphExecution(t *testing.T) {
 	g := NewGraph[ComplexState]("branch-graph")
 
 	// Add nodes
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 0)
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("process", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("process", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, len(s.Numbers))
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("finalize", func(ctx context.Context, s ComplexState, c Config[ComplexState]) (NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("finalize", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (NodeResponse[ComplexState], error) {
 		s.Done = true
-		return NodeResponse[ComplexState]{State: s, Status: StatusCompleted}, nil
+		return NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	// Add edges for all paths
@@ -294,7 +296,7 @@ func TestBranchGraphExecution(t *testing.T) {
 	require.NoError(t, g.AddEdge("finalize", END, nil))
 
 	// Add branch logic
-	require.NoError(t, g.AddBranch("process", func(ctx context.Context, s ComplexState, c Config[ComplexState]) string {
+	require.NoError(t, g.AddBranch("process", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) string {
 		if len(s.Numbers) < 3 {
 			return "process"
 		}
@@ -332,9 +334,9 @@ func TestAddNode(t *testing.T) {
 	graph := NewGraph[IntState]("test-graph")
 
 	// Add valid node
-	err := graph.AddNode("node1", func(ctx context.Context, state IntState, config Config[IntState]) (NodeResponse[IntState], error) {
+	err := graph.AddNode("node1", func(ctx context.Context, state IntState, config types.Config[IntState]) (NodeResponse[IntState], error) {
 		state.Value += 1
-		return NodeResponse[IntState]{State: state, Status: StatusCompleted}, nil
+		return NodeResponse[IntState]{State: state, Status: types.StatusCompleted}, nil
 	}, nil)
 	assert.NoError(t, err)
 
@@ -373,18 +375,18 @@ func (s SimpleStateStr) Merge(other SimpleStateStr) SimpleStateStr {
 func TestGraphBasicFlow(t *testing.T) {
 	g := NewGraph[SimpleStateStr]("test")
 
-	err := g.AddNode("node1", func(ctx context.Context, s SimpleStateStr, c Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
+	err := g.AddNode("node1", func(ctx context.Context, s SimpleStateStr, c types.Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
 		return NodeResponse[SimpleStateStr]{
 			State:  SimpleStateStr{Value: "node1"},
-			Status: StatusCompleted,
+			Status: types.StatusCompleted,
 		}, nil
 	}, nil)
 	assert.NoError(t, err)
 
-	err = g.AddNode("node2", func(ctx context.Context, s SimpleStateStr, c Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
+	err = g.AddNode("node2", func(ctx context.Context, s SimpleStateStr, c types.Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
 		return NodeResponse[SimpleStateStr]{
 			State:  SimpleStateStr{Value: "node2"},
-			Status: StatusCompleted,
+			Status: types.StatusCompleted,
 		}, nil
 	}, nil)
 	assert.NoError(t, err)
@@ -408,12 +410,12 @@ func TestGraphBasicFlow(t *testing.T) {
 
 func TestGraphCheckpointing(t *testing.T) {
 	g := NewGraph[SimpleStateStr]("test")
-	store := NewMemoryStore[SimpleStateStr]()
+	store := checkpoints.NewMemoryStore[SimpleStateStr]()
 
-	err := g.AddNode("node1", func(ctx context.Context, s SimpleStateStr, c Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
+	err := g.AddNode("node1", func(ctx context.Context, s SimpleStateStr, c types.Config[SimpleStateStr]) (NodeResponse[SimpleStateStr], error) {
 		return NodeResponse[SimpleStateStr]{
 			State:  SimpleStateStr{Value: "checkpoint1"},
-			Status: StatusPending,
+			Status: types.StatusPending,
 		}, nil
 	}, nil)
 	assert.NoError(t, err)
@@ -432,7 +434,7 @@ func TestGraphCheckpointing(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "checkpoint1", result.Value)
 
-	checkpoint, err := store.Load(context.Background(), CheckpointKey{
+	checkpoint, err := store.Load(context.Background(), types.CheckpointKey{
 		GraphID:  compiled.config.GraphID,
 		ThreadID: threadID,
 	})

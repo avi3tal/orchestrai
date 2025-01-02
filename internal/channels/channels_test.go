@@ -3,10 +3,12 @@ package channels
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/avi3tal/orchestrai/internal/dag"
+	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type TestState struct {
@@ -48,7 +50,7 @@ func (s ComplexState) Merge(st ComplexState) ComplexState {
 func TestLastValueChannel(t *testing.T) {
 	ctx := context.Background()
 	ch := NewLastValue[TestState]()
-	cfg := dag.Config[TestState]{ThreadID: "test"}
+	cfg := types.Config[TestState]{ThreadID: "test"}
 
 	t.Run("Write and Read", func(t *testing.T) {
 		state := TestState{Value: "test"}
@@ -85,10 +87,10 @@ func TestBarrierChannel(t *testing.T) {
 
 	t.Run("Write Before All Required", func(t *testing.T) {
 		state := TestState{Value: "test"}
-		err := ch.Write(ctx, state, dag.Config[TestState]{ThreadID: "node1"})
+		err := ch.Write(ctx, state, types.Config[TestState]{ThreadID: "node1"})
 		assert.NoError(t, err)
 
-		_, err = ch.Read(ctx, dag.Config[TestState]{})
+		_, err = ch.Read(ctx, types.Config[TestState]{})
 		assert.Error(t, err)
 	})
 
@@ -96,19 +98,19 @@ func TestBarrierChannel(t *testing.T) {
 		state1 := TestState{Value: "node1"}
 		state2 := TestState{Value: "node2"}
 
-		err := ch.Write(ctx, state1, dag.Config[TestState]{ThreadID: "node1"})
+		err := ch.Write(ctx, state1, types.Config[TestState]{ThreadID: "node1"})
 		assert.NoError(t, err)
 
-		err = ch.Write(ctx, state2, dag.Config[TestState]{ThreadID: "node2"})
+		err = ch.Write(ctx, state2, types.Config[TestState]{ThreadID: "node2"})
 		assert.NoError(t, err)
 
-		got, err := ch.Read(ctx, dag.Config[TestState]{})
+		got, err := ch.Read(ctx, types.Config[TestState]{})
 		assert.NoError(t, err)
 		assert.Equal(t, state2, got)
 	})
 
 	t.Run("Invalid Node Write", func(t *testing.T) {
-		err := ch.Write(ctx, TestState{}, dag.Config[TestState]{ThreadID: "invalid"})
+		err := ch.Write(ctx, TestState{}, types.Config[TestState]{ThreadID: "invalid"})
 		assert.Error(t, err)
 	})
 }
@@ -122,16 +124,16 @@ func TestDynamicBarrierChannel(t *testing.T) {
 		ch.AddRequired("node2")
 
 		state := TestState{Value: "test"}
-		err := ch.Write(ctx, state, dag.Config[TestState]{ThreadID: "node1"})
+		err := ch.Write(ctx, state, types.Config[TestState]{ThreadID: "node1"})
 		assert.NoError(t, err)
 
-		_, err = ch.Read(ctx, dag.Config[TestState]{})
+		_, err = ch.Read(ctx, types.Config[TestState]{})
 		assert.Error(t, err)
 
-		err = ch.Write(ctx, state, dag.Config[TestState]{ThreadID: "node2"})
+		err = ch.Write(ctx, state, types.Config[TestState]{ThreadID: "node2"})
 		assert.NoError(t, err)
 
-		got, err := ch.Read(ctx, dag.Config[TestState]{})
+		got, err := ch.Read(ctx, types.Config[TestState]{})
 		assert.NoError(t, err)
 		assert.Equal(t, state, got)
 	})
@@ -148,7 +150,7 @@ func TestDynamicBarrierChannel(t *testing.T) {
 		for _, node := range nodes {
 			nodeID := node
 			go func() {
-				err := ch.Write(ctx, TestState{Value: nodeID}, dag.Config[TestState]{ThreadID: nodeID})
+				err := ch.Write(ctx, TestState{Value: nodeID}, types.Config[TestState]{ThreadID: nodeID})
 				assert.NoError(t, err)
 				done <- true
 			}()
@@ -158,7 +160,7 @@ func TestDynamicBarrierChannel(t *testing.T) {
 			<-done
 		}
 
-		got, err := ch.Read(ctx, dag.Config[TestState]{})
+		got, err := ch.Read(ctx, types.Config[TestState]{})
 		assert.NoError(t, err)
 		assert.NotEmpty(t, got.Value)
 	})
@@ -173,37 +175,37 @@ func TestChannelGraphExecution(t *testing.T) {
 	require.NoError(t, g.AddChannel("numbers", numbersChannel))
 
 	// Add nodes
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c dag.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
-		return dag.NodeResponse[ComplexState]{State: s, Status: dag.StatusCompleted}, nil
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c dag.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 1, 2, 3)
 		err := numbersChannel.Write(ctx, s, c)
-		return dag.NodeResponse[ComplexState]{State: s, Status: dag.StatusCompleted}, err
+		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
 
-	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c dag.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
 		// Read previous state from channel
 		prevState, err := numbersChannel.Read(ctx, c)
 		if err != nil {
-			return dag.NodeResponse[ComplexState]{State: s, Status: dag.StatusCompleted}, err
+			return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 		}
 
 		// Append new numbers to existing ones
 		s.Numbers = append(prevState.Numbers, 4, 5, 6)
 		err = numbersChannel.Write(ctx, s, c)
-		return dag.NodeResponse[ComplexState]{State: s, Status: dag.StatusCompleted}, err
+		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
 
-	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c dag.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
 		state, err := numbersChannel.Read(ctx, c)
 		if err != nil {
-			return dag.NodeResponse[ComplexState]{State: s, Status: dag.StatusCompleted}, err
+			return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 		}
 		s.Numbers = state.Numbers
 		s.Done = true
-		return dag.NodeResponse[ComplexState]{State: s, Status: dag.StatusCompleted}, nil
+		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	// Add sequential path

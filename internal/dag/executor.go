@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/internal/types"
 )
 
 const DefaultMaxRetries = 1
@@ -13,16 +16,16 @@ type NextNode struct {
 	Then   string // Optional post-processing node
 }
 
-type NextNodeInfo[T GraphState[T]] struct {
+type NextNodeInfo[T state.GraphState[T]] struct {
 	Target    NextNode
 	PrevState T
 }
 
-func executeNode[T GraphState[T]](
+func executeNode[T state.GraphState[T]](
 	ctx context.Context,
 	node NodeSpec[T],
 	state T,
-	config Config[T],
+	config types.Config[T],
 ) (NodeResponse[T], error) {
 	maxAttempts := DefaultMaxRetries
 	if node.RetryPolicy != nil {
@@ -44,20 +47,20 @@ func executeNode[T GraphState[T]](
 	return NodeResponse[T]{}, lastErr
 }
 
-func saveCheckpoint[T GraphState[T]](
+func saveCheckpoint[T state.GraphState[T]](
 	ctx context.Context,
 	state T,
 	node string,
-	status NodeExecutionStatus,
+	status types.NodeExecutionStatus,
 	steps int,
-	config Config[T],
+	config types.Config[T],
 	nodeQueue ...string,
 ) error {
 	if config.Checkpointer == nil {
 		return nil
 	}
 
-	data := &CheckpointData[T]{
+	data := &types.DataPoint[T]{
 		State:       state,
 		CurrentNode: node,
 		Status:      status,
@@ -67,16 +70,16 @@ func saveCheckpoint[T GraphState[T]](
 	return config.Checkpointer.Save(ctx, config, data)
 }
 
-func loadOrInitCheckpoint[T GraphState[T]](
+func loadOrInitCheckpoint[T state.GraphState[T]](
 	ctx context.Context,
 	entryPoint string,
 	initialState T,
-	config Config[T],
-) CheckpointData[T] {
-	data := CheckpointData[T]{
+	config types.Config[T],
+) types.DataPoint[T] {
+	data := types.DataPoint[T]{
 		State:       initialState,
 		CurrentNode: entryPoint,
-		Status:      StatusReady,
+		Status:      types.StatusReady,
 		Steps:       0,
 		NodeQueue:   []string{entryPoint},
 	}
@@ -92,7 +95,7 @@ func loadOrInitCheckpoint[T GraphState[T]](
 		// Restore the CurrentNode and node queue if the checkpoint is pending
 		// This will resume the execution from the last pending node
 		// and skip the nodes that have already
-		if checkpoint.Status == StatusPending {
+		if checkpoint.Status == types.StatusPending {
 			data.CurrentNode = checkpoint.CurrentNode
 			data.NodeQueue = checkpoint.NodeQueue
 		}
@@ -101,7 +104,7 @@ func loadOrInitCheckpoint[T GraphState[T]](
 	return data
 }
 
-func checkExecutionLimits[T GraphState[T]](ctx context.Context, steps int, config Config[T]) error {
+func checkExecutionLimits[T state.GraphState[T]](ctx context.Context, steps int, config types.Config[T]) error {
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("execution cancelled: %w", ctx.Err())
@@ -115,11 +118,11 @@ func checkExecutionLimits[T GraphState[T]](ctx context.Context, steps int, confi
 	return nil
 }
 
-func execute[T GraphState[T]](
+func execute[T state.GraphState[T]](
 	ctx context.Context,
 	graph *Graph[T],
 	initialState T,
-	config Config[T],
+	config types.Config[T],
 ) (T, error) {
 	if config.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -166,7 +169,7 @@ func execute[T GraphState[T]](
 		}
 
 		// If the node is pending, return the current state and the pending error
-		if resp.Status == StatusPending {
+		if resp.Status == types.StatusPending {
 			return state, nil
 		}
 
@@ -190,12 +193,12 @@ func execute[T GraphState[T]](
 	return state, nil
 }
 
-func getNextNode[T GraphState[T]](
+func getNextNode[T state.GraphState[T]](
 	ctx context.Context,
 	graph *Graph[T],
 	currentNode string,
 	state T,
-	config Config[T],
+	config types.Config[T],
 ) (NextNode, error) {
 	// Check branches first
 	for _, branch := range graph.branches[currentNode] {
