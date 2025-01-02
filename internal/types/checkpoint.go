@@ -2,8 +2,9 @@ package types
 
 import (
 	"context"
-	"github.com/avi3tal/orchestrai/internal/state"
 	"time"
+
+	"github.com/avi3tal/orchestrai/internal/state"
 )
 
 type CheckpointKey struct {

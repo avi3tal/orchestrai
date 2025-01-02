@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/avi3tal/orchestrai/internal/dag"
+	"github.com/avi3tal/orchestrai/internal/graph"
 	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -168,58 +168,58 @@ func TestDynamicBarrierChannel(t *testing.T) {
 
 // Test graph with channels
 func TestChannelGraphExecution(t *testing.T) {
-	g := dag.NewGraph[ComplexState]("channel-graph")
+	g := graph.NewGraph[ComplexState]("channel-graph")
 
 	numbersChannel := NewLastValue[ComplexState]()
 	// Add channels
 	require.NoError(t, g.AddChannel("numbers", numbersChannel))
 
 	// Add nodes
-	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
-		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
+	require.NoError(t, g.AddNode("start", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
+		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 1, 2, 3)
 		err := numbersChannel.Write(ctx, s, c)
-		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
 
-	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
 		// Read previous state from channel
 		prevState, err := numbersChannel.Read(ctx, c)
 		if err != nil {
-			return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+			return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 		}
 
 		// Append new numbers to existing ones
 		s.Numbers = append(prevState.Numbers, 4, 5, 6)
 		err = numbersChannel.Write(ctx, s, c)
-		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
 
-	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (dag.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
 		state, err := numbersChannel.Read(ctx, c)
 		if err != nil {
-			return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+			return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 		}
 		s.Numbers = state.Numbers
 		s.Done = true
-		return dag.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
+		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	// Add sequential path
 	require.NoError(t, g.AddEdge("start", "producer1", nil))
 	require.NoError(t, g.AddEdge("producer1", "producer2", nil))
 	require.NoError(t, g.AddEdge("producer2", "consumer", nil))
-	require.NoError(t, g.AddEdge("consumer", dag.END, nil))
+	require.NoError(t, g.AddEdge("consumer", graph.END, nil))
 
 	require.NoError(t, g.SetEntryPoint("start"))
 
-	compiled, err := g.Compile(dag.WithDebug[ComplexState]())
+	compiled, err := g.Compile(graph.WithDebug[ComplexState]())
 	require.NoError(t, err)
 
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, dag.WithThreadID[ComplexState]("test-channels"))
+	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, graph.WithThreadID[ComplexState]("test-channels"))
 	require.NoError(t, err)
 	assert.True(t, result.Done)
 	assert.Equal(t, []int{1, 2, 3, 4, 5, 6}, result.Numbers)

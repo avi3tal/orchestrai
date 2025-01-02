@@ -1,4 +1,4 @@
-package dag
+package graph
 
 import (
 	"context"
