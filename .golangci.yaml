@@ -1,16 +1,27 @@
 linters:
+  disable-all: true
   enable:
-    - gofmt
-    - golint
-    - govet
-    - gosimple
-    - staticcheck
     - errcheck
+    - gosimple
+    - govet
     - ineffassign
+    - staticcheck
+    - revive      # replacement for golint
+    - gofmt
+    - shadow      # replacement for check-shadowing
 
 run:
   timeout: 5m
-  modules-download-mode: readonly
+  skip-dirs:
+    - vendor/
+    - cmd/examples/  # skip examples directory if needed
+  skip-files:
+    - "*_test.go"   # skip test files if needed during lint
+
+  # Allow downloading external modules
+  allow-parallel-runners: true
+  go: '1.23'
+  modules-download-mode: mod
 
 issues:
   exclude-use-default: false
@@ -18,7 +29,18 @@ issues:
   max-same-issues: 0
 
 linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
   govet:
-    check-shadowing: true
-  golint:
-    min-confidence: 0.8
+    enable:
+      - shadow
+  staticcheck:
+    go: "1.23"
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true

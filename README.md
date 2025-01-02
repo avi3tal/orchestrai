@@ -8,6 +8,27 @@
 
 OrchestAI is a high-performance orchestration framework for distributed AI agents, designed for production-grade systems. It provides a robust infrastructure for managing and coordinating micro-agents in scalable environments.
 
+⚠️ **IMPORTANT DISCLAIMER** ⚠️
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+BY USING THIS SOFTWARE, YOU ACCEPT FULL RESPONSIBILITY FOR ALL RISKS ASSOCIATED
+WITH ITS USE IN ANY ENVIRONMENT, INCLUDING BUT NOT LIMITED TO PRODUCTION ENVIRONMENTS.
+
+The maintainers and contributors:
+- Make no warranties about the software's fitness for any purpose
+- Accept no responsibility for any damages or losses resulting from its use
+- Provide no guarantees about its security, reliability, or performance
+- Bear no liability for any issues arising from its use in production systems
+
+**USE IN PRODUCTION ENVIRONMENTS IS ENTIRELY AT YOUR OWN RISK.**
+
+Users are solely responsible for:
+- Evaluating the software's suitability for their needs
+- Testing and validating the software in their environment
+- Maintaining and securing their implementation
+- Managing all risks associated with its deployment
+
+
 ## Features
 
 - **Distributed Agent Orchestration**: Manage multiple AI agents across different services and locations
