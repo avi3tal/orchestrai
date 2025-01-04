@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/avi3tal/orchestrai/internal/checkpoints"
 	"github.com/avi3tal/orchestrai/internal/graph"
-	"github.com/avi3tal/orchestrai/internal/state"
-	"github.com/avi3tal/orchestrai/internal/types"
+	"github.com/avi3tal/orchestrai/pkg/checkpoints"
+	"github.com/avi3tal/orchestrai/pkg/state"
+	"github.com/avi3tal/orchestrai/pkg/types"
 	"github.com/tmc/langchaingo/llms"
 )
 
-func AddAIMessage(text string) func(context.Context, state.MessagesState, types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
-	return func(_ context.Context, _ state.MessagesState, _ types.Config[state.MessagesState]) (graph.NodeResponse[state.MessagesState], error) {
+func AddAIMessage(text string) func(context.Context, state.MessagesState, types.Config[state.MessagesState]) (types.NodeResponse[state.MessagesState], error) {
+	return func(_ context.Context, _ state.MessagesState, _ types.Config[state.MessagesState]) (types.NodeResponse[state.MessagesState], error) {
 		ms := state.MessagesState{
 			Messages: []llms.MessageContent{llms.TextParts(llms.ChatMessageTypeAI, text)},
 		}
-		return graph.NodeResponse[state.MessagesState]{
+		return types.NodeResponse[state.MessagesState]{
 			State: ms,
 		}, nil
 	}

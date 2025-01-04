@@ -3,7 +3,7 @@ package types
 import (
 	"context"
 
-	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/pkg/state"
 )
 
 // Channel represents state management operations.

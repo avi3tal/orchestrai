@@ -1,9 +1,9 @@
 package graph
 
 import (
-	"github.com/avi3tal/orchestrai/internal/checkpoints"
-	"github.com/avi3tal/orchestrai/internal/state"
-	"github.com/avi3tal/orchestrai/internal/types"
+	"github.com/avi3tal/orchestrai/pkg/checkpoints"
+	"github.com/avi3tal/orchestrai/pkg/state"
+	"github.com/avi3tal/orchestrai/pkg/types"
 	"github.com/google/uuid"
 )
 

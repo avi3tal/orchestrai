@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/avi3tal/orchestrai/internal/state"
+	"github.com/avi3tal/orchestrai/pkg/state"
 )
 
 type CheckpointKey struct {

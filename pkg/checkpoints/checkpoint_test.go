@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/avi3tal/orchestrai/internal/types"
+	"github.com/avi3tal/orchestrai/pkg/types"
 	"github.com/stretchr/testify/require"
 )
 

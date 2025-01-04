@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/avi3tal/orchestrai/internal/state"
-	"github.com/avi3tal/orchestrai/internal/types"
+	"github.com/avi3tal/orchestrai/pkg/state"
+	"github.com/avi3tal/orchestrai/pkg/types"
 )
 
 const DefaultMaxRetries = 1
@@ -26,7 +26,7 @@ func executeNode[T state.GraphState[T]](
 	node NodeSpec[T],
 	state T,
 	config types.Config[T],
-) (NodeResponse[T], error) {
+) (types.NodeResponse[T], error) {
 	maxAttempts := DefaultMaxRetries
 	if node.RetryPolicy != nil {
 		maxAttempts = node.RetryPolicy.MaxAttempts
@@ -44,7 +44,7 @@ func executeNode[T state.GraphState[T]](
 		}
 		lastErr = err
 	}
-	return NodeResponse[T]{}, fmt.Errorf("failed to execute node %s: %w", node.Name, lastErr)
+	return types.NodeResponse[T]{}, fmt.Errorf("failed to execute node %s: %w", node.Name, lastErr)
 }
 
 func saveCheckpoint[T state.GraphState[T]](
@@ -100,7 +100,9 @@ func loadOrInitCheckpoint[T state.GraphState[T]](
 		// and skip the nodes that have already
 		if checkpoint.Status == types.StatusPending {
 			data.CurrentNode = checkpoint.CurrentNode
-			data.NodeQueue = checkpoint.NodeQueue
+			queue := []string{checkpoint.CurrentNode}
+			queue = append(queue, checkpoint.NodeQueue...)
+			data.NodeQueue = queue
 		}
 	}
 
@@ -133,15 +135,22 @@ func execute[T state.GraphState[T]](
 		defer cancel()
 	}
 
+	if config.Debug {
+		fmt.Printf("Executing graph %s with config: %+v\n", graph.graphID, config)
+	}
+
 	// Load or initialize the state and checkpoint
 	checkpoint := loadOrInitCheckpoint(ctx, graph.entryPoint, initialState, config)
-	state := checkpoint.State
+	st := checkpoint.State
 	steps := checkpoint.Steps
 	nodeQueue := checkpoint.NodeQueue
 
 	for len(nodeQueue) > 0 {
+		if config.Debug {
+			fmt.Printf("[Step %d] Node queue: %v\n", steps, nodeQueue)
+		}
 		if err := checkExecutionLimits(ctx, steps, config); err != nil {
-			return state, err
+			return st, err
 		}
 
 		// Pop next node
@@ -155,31 +164,49 @@ func execute[T state.GraphState[T]](
 		// Execute current node
 		node, exists := graph.nodes[current]
 		if !exists {
-			return state, fmt.Errorf("node %s not found", current)
+			if config.Debug {
+				fmt.Printf("[Step %d] Node %s not found\n", steps, current)
+			}
+			return st, fmt.Errorf("node %s not found", current)
 		}
 
-		resp, err := executeNode(ctx, node, state, config)
+		resp, err := executeNode(ctx, node, st, config)
 		if err != nil {
-			return state, err
+			if config.Debug {
+				fmt.Printf("[Step %d] Failed to execute node %s: %v\n", steps, current, err)
+			}
+			return st, err
 		}
-		state = state.Merge(resp.State)
+		st = st.Merge(resp.State)
+		if config.Debug {
+			fmt.Printf("[Step %d] \n\tstate %v\n\tafter merge %v\n", steps, resp.State, st)
+		}
 
 		// Save the checkpoint after executing the node
 		if err = saveCheckpoint(
-			ctx, state, current, resp.Status, steps, config, nodeQueue...,
+			ctx, st, current, resp.Status, steps, config, nodeQueue...,
 		); err != nil {
-			return state, err
+			if config.Debug {
+				fmt.Printf("[Step %d] Failed to save checkpoint: %v\n", steps, err)
+			}
+			return st, err
 		}
 
 		// If the node is pending, return the current state and the pending error
 		if resp.Status == types.StatusPending {
-			return state, nil
+			if config.Debug {
+				fmt.Printf("[Step %d] Node %s is pending on state %v\n", steps, current, st)
+			}
+			return st, nil
 		}
 
 		// Queue next nodes
-		next, err := getNextNode(ctx, graph, current, state, config)
+		next, err := getNextNode(ctx, graph, current, st, config)
 		if err != nil {
-			return state, err
+			if config.Debug {
+				fmt.Printf("[Step %d] Failed to get next node: %v\n", steps, err)
+			}
+			return st, err
 		}
 
 		// Queue Then node if exists
@@ -193,7 +220,7 @@ func execute[T state.GraphState[T]](
 		steps++
 	}
 
-	return state, nil
+	return st, nil
 }
 
 func getNextNode[T state.GraphState[T]](

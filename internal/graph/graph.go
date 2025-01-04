@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/avi3tal/orchestrai/internal/state"
-	"github.com/avi3tal/orchestrai/internal/types"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+
+	"github.com/avi3tal/orchestrai/pkg/state"
+	"github.com/avi3tal/orchestrai/pkg/types"
 )
 
 // Constants for special nodes
@@ -18,16 +19,10 @@ const (
 	defaultGraphName = "graph"
 )
 
-// NodeResponse encapsulates the execution result
-type NodeResponse[T state.GraphState[T]] struct {
-	State  T
-	Status types.NodeExecutionStatus
-}
-
 // NodeSpec represents a node's specification
 type NodeSpec[T state.GraphState[T]] struct {
 	Name        string
-	Function    func(context.Context, T, types.Config[T]) (NodeResponse[T], error)
+	Function    func(context.Context, T, types.Config[T]) (types.NodeResponse[T], error)
 	Metadata    map[string]any
 	RetryPolicy *RetryPolicy
 }
@@ -96,8 +91,13 @@ func NewGraph[T state.GraphState[T]](name string, opt ...Option[T]) *Graph[T] {
 	return &g
 }
 
+func (g *Graph[T]) HasNode(name string) bool {
+	_, exists := g.nodes[name]
+	return exists
+}
+
 // AddNode adds a new node to the graph
-func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config[T]) (NodeResponse[T], error), metadata map[string]any) error {
+func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config[T]) (types.NodeResponse[T], error), metadata map[string]any) error {
 	if g.compiled {
 		return errors.New("cannot add node to compiled graph")
 	}

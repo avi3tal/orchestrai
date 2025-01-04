@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/avi3tal/orchestrai/internal/state"
-	"github.com/avi3tal/orchestrai/internal/types"
+	"github.com/avi3tal/orchestrai/pkg/state"
+	"github.com/avi3tal/orchestrai/pkg/types"
 )
 
 type MemoryStore[T state.GraphState[T]] struct {

@@ -1,6 +1,6 @@
 package types
 
-import "github.com/avi3tal/orchestrai/internal/state"
+import "github.com/avi3tal/orchestrai/pkg/state"
 
 // Config represents runtime configuration for graph execution
 type Config[T state.GraphState[T]] struct {

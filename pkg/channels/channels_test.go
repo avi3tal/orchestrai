@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/avi3tal/orchestrai/internal/graph"
-	"github.com/avi3tal/orchestrai/internal/types"
+	"github.com/avi3tal/orchestrai/pkg/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -186,38 +186,38 @@ func TestChannelGraphExecution(t *testing.T) {
 	require.NoError(t, g.AddChannel("numbers", numbersChannel))
 
 	// Add nodes
-	require.NoError(t, g.AddNode("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
-		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
+	require.NoError(t, g.AddNode("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
+		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
-	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("producer1", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
 		s.Numbers = append(s.Numbers, 1, 2, 3)
 		err := numbersChannel.Write(ctx, s, c)
-		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
 
-	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("producer2", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
 		// Read previous state from channel
 		prevState, err := numbersChannel.Read(ctx, c)
 		if err != nil {
-			return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+			return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 		}
 
 		// Append new numbers to existing ones
 		copy(s.Numbers, prevState.Numbers)
 		s.Numbers = append(s.Numbers, 4, 5, 6)
 		err = numbersChannel.Write(ctx, s, c)
-		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 	}, nil))
 
-	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (graph.NodeResponse[ComplexState], error) {
+	require.NoError(t, g.AddNode("consumer", func(ctx context.Context, s ComplexState, c types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
 		state, err := numbersChannel.Read(ctx, c)
 		if err != nil {
-			return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
+			return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, err
 		}
 		s.Numbers = state.Numbers
 		s.Done = true
-		return graph.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
+		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
 	}, nil))
 
 	// Add sequential path
