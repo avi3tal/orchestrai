@@ -52,6 +52,7 @@ type Graph[T state.GraphState[T]] struct {
 	graphID  string
 	nodes    map[string]NodeSpec[T]
 	edges    []Edge
+	adjList  map[string][]Edge // from node -> its edges
 	branches map[string][]Branch[T]
 	channels map[string]types.Channel[T]
 
@@ -91,124 +92,33 @@ func NewGraph[T state.GraphState[T]](name string, opt ...Option[T]) *Graph[T] {
 	return &g
 }
 
-func (g *Graph[T]) HasNode(name string) bool {
-	_, exists := g.nodes[name]
-	return exists
+func (g *Graph[T]) reachableFrom(startNode string) map[string]bool {
+	visited := make(map[string]bool)
+	g.dfs(startNode, visited)
+	return visited
 }
 
-// AddNode adds a new node to the graph
-func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config[T]) (types.NodeResponse[T], error), metadata map[string]any) error {
-	if g.compiled {
-		return errors.New("cannot add node to compiled graph")
-	}
-
-	if _, exists := g.nodes[name]; exists {
-		return fmt.Errorf("node %s already exists", name)
-	}
-
-	g.nodes[name] = NodeSpec[T]{
-		Name:     name,
-		Function: fn,
-		Metadata: metadata,
-	}
-
-	return nil
-}
-
-// AddEdge methods for edge management
-func (g *Graph[T]) AddEdge(from, to string, metadata map[string]any) error {
-	if g.compiled {
-		return errors.New("cannot add edge to compiled graph")
-	}
-
-	if err := g.validateEdgeNodes(from, []string{to}); err != nil {
-		return err
-	}
-
-	g.edges = append(g.edges, Edge{
-		From:     from,
-		To:       to,
-		Metadata: metadata,
-	})
-
-	return nil
-}
-
-// AddBranch adds a conditional branch from a node
-func (g *Graph[T]) AddBranch(from string, path func(context.Context, T, types.Config[T]) string, then string, metadata map[string]any) error {
-	if g.compiled {
-		return errors.New("cannot add branch to compiled graph")
-	}
-
-	// Validate source node
-	if _, exists := g.nodes[from]; !exists {
-		return fmt.Errorf("source node %s does not exist", from)
-	}
-
-	// Validate target node if specified
-	if then != "" && then != END {
-		if _, exists := g.nodes[then]; !exists {
-			return fmt.Errorf("target node %s does not exist", then)
+func (g *Graph[T]) dfs(node string, visited map[string]bool) {
+	visited[node] = true
+	for _, edge := range g.adjList[node] {
+		if !visited[edge.To] {
+			g.dfs(edge.To, visited)
 		}
 	}
-
-	branch := Branch[T]{
-		Path:     path,
-		Then:     then,
-		Metadata: metadata,
-	}
-
-	g.branches[from] = append(g.branches[from], branch)
-	return nil
 }
 
-// AddChannel adds a state management channel
-func (g *Graph[T]) AddChannel(name string, channel types.Channel[T]) error {
+func (g *Graph[T]) checkNotCompiled() error {
 	if g.compiled {
-		return errors.New("cannot add channel to compiled graph")
+		return errors.New("cannot modify a compiled graph")
 	}
-
-	if _, exists := g.channels[name]; exists {
-		return fmt.Errorf("channel %s already exists", name)
-	}
-
-	g.channels[name] = channel
 	return nil
 }
 
-// AddConditionalEdge adds a conditional edge to the graph
-func (g *Graph[T]) AddConditionalEdge(
-	from string,
-	possibleTargets []string,
-	condition func(context.Context, T, types.Config[T]) string,
-	metadata map[string]any,
-) error {
-	// Validate nodes first
-	if err := g.validateEdgeNodes(from, possibleTargets); err != nil {
-		return err
+func (g *Graph[T]) checkNodeExists(name string) error {
+	if _, exists := g.nodes[name]; !exists {
+		return fmt.Errorf("node %s does not exist", name)
 	}
-
-	for _, target := range possibleTargets {
-		if err := g.AddEdge(from, target, metadata); err != nil {
-			return errors.Wrapf(err, "failed to add conditional edge target %s", target)
-		}
-	}
-
-	// Create branch with validated condition
-	return g.AddBranch(from,
-		func(ctx context.Context, state T, cfg types.Config[T]) string {
-			next := condition(ctx, state, cfg)
-			// Validate target is allowed
-			for _, target := range possibleTargets {
-				if target == next {
-					return next
-				}
-			}
-			return ""
-		},
-		"", // No then node
-		metadata,
-	)
+	return nil
 }
 
 // validateEdgeNodes validates source and target nodes
@@ -237,37 +147,186 @@ func (g *Graph[T]) validateEdgeNodes(from string, targets []string) error {
 	return nil
 }
 
-// SetEntryPoint sets the entry point of the graph
-func (g *Graph[T]) SetEntryPoint(name string) error {
-	if g.compiled {
-		return errors.New("cannot set entry point on compiled graph")
+func (g *Graph[T]) buildAdjList() {
+	g.adjList = make(map[string][]Edge)
+	for _, edge := range g.edges {
+		g.adjList[edge.From] = append(g.adjList[edge.From], edge)
+	}
+}
+
+func (g *Graph[T]) ID() string {
+	return g.graphID
+}
+
+func (g *Graph[T]) HasNode(name string) bool {
+	_, exists := g.nodes[name]
+	return exists
+}
+
+// AddNode adds a new node to the graph
+func (g *Graph[T]) AddNode(name string, fn func(context.Context, T, types.Config[T]) (types.NodeResponse[T], error), metadata map[string]any) error {
+	if err := g.checkNotCompiled(); err != nil {
+		return err
 	}
 
+	if _, exists := g.nodes[name]; exists {
+		return fmt.Errorf("node %s already exists", name)
+	}
+
+	g.nodes[name] = NodeSpec[T]{
+		Name:     name,
+		Function: fn,
+		Metadata: metadata,
+	}
+
+	return nil
+}
+
+// AddEdge methods for edge management
+func (g *Graph[T]) AddEdge(from, to string, metadata map[string]any) error {
+	if err := g.checkNotCompiled(); err != nil {
+		return err
+	}
+
+	if err := g.validateEdgeNodes(from, []string{to}); err != nil {
+		return err
+	}
+	g.edges = append(g.edges, Edge{
+		From:     from,
+		To:       to,
+		Metadata: metadata,
+	})
+	g.buildAdjList() // or do an incremental update
+	return nil
+}
+
+func (g *Graph[T]) addBranchCore(
+	from string,
+	path func(context.Context, T, types.Config[T]) string,
+	then string,
+	metadata map[string]any,
+) error {
+	if err := g.checkNotCompiled(); err != nil {
+		return err
+	}
+
+	if err := g.checkNodeExists(from); err != nil {
+		return errors.Wrapf(err, "invalid branch source %s", from)
+	}
+
+	// then must be valid or END
+	if then != "" && then != END {
+		if err := g.checkNodeExists(then); err != nil {
+			return errors.Wrapf(err, "invalid branch target %s", then)
+		}
+	}
+
+	branch := Branch[T]{Path: path, Then: then, Metadata: metadata}
+	g.branches[from] = append(g.branches[from], branch)
+	return nil
+}
+
+// AddBranch adds a conditional branch from a node
+func (g *Graph[T]) AddBranch(
+	from string,
+	path func(context.Context, T, types.Config[T]) string,
+	then string,
+	metadata map[string]any,
+) error {
+	return g.addBranchCore(from, path, then, metadata)
+}
+
+// AddChannel adds a state management channel
+func (g *Graph[T]) AddChannel(name string, channel types.Channel[T]) error {
+	if err := g.checkNotCompiled(); err != nil {
+		return err
+	}
+
+	if _, exists := g.channels[name]; exists {
+		return fmt.Errorf("channel %s already exists", name)
+	}
+
+	g.channels[name] = channel
+	return nil
+}
+
+// AddConditionalEdge adds a conditional edge to the graph
+func (g *Graph[T]) AddConditionalEdge(
+	from string,
+	possibleTargets []string,
+	condition func(context.Context, T, types.Config[T]) string,
+	metadata map[string]any,
+) error {
+	// 1) Validate node constraints
+	if err := g.validateEdgeNodes(from, possibleTargets); err != nil {
+		return err
+	}
+
+	// 2) Add edges for each possible target
+	for _, target := range possibleTargets {
+		if err := g.AddEdge(from, target, metadata); err != nil {
+			return errors.Wrapf(err, "failed to add edge: %s -> %s", from, target)
+		}
+	}
+
+	// 3) Reuse a shared “add branch” method
+	branchPath := func(ctx context.Context, st T, cfg types.Config[T]) string {
+		next := condition(ctx, st, cfg)
+		// Return next only if it’s in possibleTargets
+		for _, pt := range possibleTargets {
+			if pt == next {
+				return next
+			}
+		}
+		return "" // or END if you want a fallback
+	}
+
+	return g.addBranchCore(from, branchPath, "", metadata)
+}
+
+// SetEntryPoint sets the entry point of the graph
+func (g *Graph[T]) SetEntryPoint(name string) error {
+	if err := g.checkNotCompiled(); err != nil {
+		return err
+	}
+	// Don’t allow END as an entry point
 	if name == END {
 		return errors.New("cannot set END as entry point")
 	}
-
-	if _, exists := g.nodes[name]; !exists {
-		return fmt.Errorf("node %s does not exist", name)
+	// Must exist
+	if err := g.checkNodeExists(name); err != nil {
+		return err
 	}
 
 	g.entryPoint = name
 	return nil
 }
 
-func (g *Graph[T]) Validate() error {
-	if g.entryPoint == "" {
-		return errors.New("entry point not set")
+func (g *Graph[T]) SetEndPoint(name string) error {
+	if err := g.checkNotCompiled(); err != nil {
+		return err
+	}
+	// Don’t allow START as an endpoint
+	if name == START {
+		return errors.New("cannot set START as endpoint")
+	}
+	// Must exist
+	if err := g.checkNodeExists(name); err != nil {
+		return err
 	}
 
-	// Check if entry point exists
+	if err := g.AddEdge(name, END, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (g *Graph[T]) Validate() error {
 	if _, exists := g.nodes[g.entryPoint]; !exists {
 		return fmt.Errorf("entry point node %s does not exist", g.entryPoint)
 	}
 
-	// Use DFS to find reachable nodes
-	visited := make(map[string]bool)
-	reachable := g.dfs(g.entryPoint, visited)
+	reachable := g.reachableFrom(g.entryPoint)
 
 	// Check all nodes are reachable
 	for node := range g.nodes {
@@ -276,27 +335,16 @@ func (g *Graph[T]) Validate() error {
 		}
 	}
 
-	// Verify path to END exists
 	if !reachable[END] {
 		return errors.New("no path to END from entry point")
 	}
-
 	return nil
 }
 
-func (g *Graph[T]) dfs(node string, visited map[string]bool) map[string]bool {
-	visited[node] = true
-	reachable := make(map[string]bool)
-	reachable[node] = true
-
-	// Follow edges
-	for _, edge := range g.edges {
-		if edge.From == node && !visited[edge.To] {
-			for k, v := range g.dfs(edge.To, visited) {
-				reachable[k] = v
-			}
-		}
+func (g *Graph[T]) BranchEnable(startNode string) error {
+	reachable := g.reachableFrom(startNode)
+	if !reachable[END] {
+		return errors.New("no path to END from node " + startNode)
 	}
-
-	return reachable
+	return nil
 }

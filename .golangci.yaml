@@ -27,6 +27,7 @@ linters:
     - godot
     - forbidigo
     - err113
+    - ireturn
 
 linters-settings:
   cyclop:

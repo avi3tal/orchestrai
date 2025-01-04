@@ -7,6 +7,7 @@ import (
 
 	"github.com/avi3tal/orchestrai/pkg/state"
 	"github.com/avi3tal/orchestrai/pkg/types"
+	"github.com/pkg/errors"
 )
 
 const DefaultMaxRetries = 1
@@ -176,6 +177,12 @@ func execute[T state.GraphState[T]](
 				fmt.Printf("[Step %d] Failed to execute node %s: %v\n", steps, current, err)
 			}
 			return st, err
+		}
+		if err = st.Validate(); err != nil {
+			if config.Debug {
+				fmt.Printf("[Step %d] Invalid state after node %s: %v\n", steps, current, err)
+			}
+			return st, errors.Wrap(err, "invalid state")
 		}
 		st = st.Merge(resp.State)
 		if config.Debug {

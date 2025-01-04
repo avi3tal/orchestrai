@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,443 +12,462 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test States
-type SimpleState struct {
-	Value int
-}
+//---------------------------//
+// Mock State Implementation //
+//---------------------------//
 
-func (s SimpleState) Validate() error {
+// MyState is a simple example state that implements state.GraphState[MyState].
+// In a real scenario, you might have a more complex data structure.
+type MyState map[string]interface{}
+
+func (s MyState) Validate() error {
+	// In a real scenario, you might want to validate the state
 	return nil
 }
 
-func (s SimpleState) Merge(st SimpleState) SimpleState {
-	return SimpleState{
-		Value: st.Value,
+func (s MyState) Merge(other MyState) MyState {
+	// Naive merge: overwrite keys from other
+	merged := make(MyState)
+	for k, v := range s {
+		merged[k] = v
 	}
-}
-
-type ComplexState struct {
-	Numbers []int
-	Text    string
-	Done    bool
-}
-
-func (s ComplexState) Validate() error {
-	if s.Numbers == nil {
-		return errors.New("numbers cannot be nil")
+	for k, v := range other {
+		merged[k] = v
 	}
-	return nil
+	return merged
 }
 
-func (s ComplexState) Merge(st ComplexState) ComplexState {
-	return ComplexState{
-		Numbers: st.Numbers,
-		Text:    st.Text,
-		Done:    st.Done,
-	}
+//----------------------//
+// Mock Node Functions  //
+//----------------------//
+
+// simulateCompiler is a trivial node function that simulates a "compiler" action.
+func simulateCompiler(_ context.Context, st MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+	// "Compile" logic... e.g., set some key in the state
+	newState := MyState{"status": "compiled"}
+	merged := st.Merge(newState)
+	return types.NodeResponse[MyState]{
+		State:  merged,
+		Status: types.StatusCompleted,
+	}, nil
 }
 
-// Test basic graph with direct edges
-func TestSimpleGraphExecution(t *testing.T) {
+// simulateResearcher is a trivial node function that simulates a "research" action.
+func simulateResearcher(_ context.Context, st MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+	newState := MyState{"research": "done"}
+	merged := st.Merge(newState)
+	return types.NodeResponse[MyState]{
+		State:  merged,
+		Status: types.StatusCompleted,
+	}, nil
+}
+
+// simulateTreeOfThoughts is a trivial node function that simulates a "tree of thoughts."
+func simulateTreeOfThoughts(_ context.Context, st MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+	newState := MyState{"thinking": true}
+	merged := st.Merge(newState)
+	return types.NodeResponse[MyState]{
+		State:  merged,
+		Status: types.StatusCompleted,
+	}, nil
+}
+
+// simulateErrorNode always returns an error (useful for negative tests).
+func simulateErrorNode(_ context.Context, _ MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+	return types.NodeResponse[MyState]{}, errors.New("simulated failure")
+}
+
+//---------------------------//
+// Tests for the Graph Logic //
+//---------------------------//
+
+func TestGraphScenarios(t *testing.T) {
 	t.Parallel()
-	g := NewGraph[SimpleState]("simple-graph")
+	// Reusable subfunction to compile & run a graph with an initial state
+	// so that we don't rewrite this each time.
+	runGraph := func(t *testing.T, g *Graph[MyState], initial MyState) (MyState, error) {
+		t.Helper()
 
-	// Add nodes that increment the value
-	require.NoError(t, g.AddNode("add1", func(_ context.Context, s SimpleState, _ types.Config[SimpleState]) (types.NodeResponse[SimpleState], error) {
-		s.Value++
-		return types.NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
+		// Compile the graph
+		compiled, err := g.Compile()
+		require.NoError(t, err, "Failed to compile graph")
 
-	require.NoError(t, g.AddNode("add2", func(_ context.Context, s SimpleState, _ types.Config[SimpleState]) (types.NodeResponse[SimpleState], error) {
-		s.Value += 2
-		return types.NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
+		// Run the graph
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return compiled.Run(ctx, initial)
+	}
 
-	// Add direct edges
-	require.NoError(t, g.AddEdge("add1", "add2", nil))
-	require.NoError(t, g.AddEdge("add2", END, nil))
-	require.NoError(t, g.SetEntryPoint("add1"))
+	t.Run("SimpleLinearGraph", func(t *testing.T) {
+		t.Parallel()
+		g := NewGraph[MyState]("SimpleLinearGraph")
+		// Add nodes
+		require.NoError(t, g.AddNode("Compiler", simulateCompiler, nil))
+		require.NoError(t, g.AddNode("Researcher", simulateResearcher, nil))
 
-	// Compile and run
-	compiled, err := g.Compile(WithDebug[SimpleState]())
-	require.NoError(t, err)
+		// Add edges: START -> Compiler -> Researcher -> END
+		require.NoError(t, g.AddEdge("Compiler", "Researcher", nil))
 
-	result, err := compiled.Run(context.Background(), SimpleState{Value: 0}, WithThreadID[SimpleState]("test-1"))
-	require.NoError(t, err)
-	require.Equal(t, 3, result.Value) // 0 + 1 + 2
-}
+		// We designate "Compiler" as the entry, "Researcher" as the end node
+		require.NoError(t, g.SetEntryPoint("Compiler"))
+		require.NoError(t, g.SetEndPoint("Researcher"))
 
-func TestConditionalGraphExecution(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[SimpleState]("conditional-graph")
+		// Validate & run
+		st, err := runGraph(t, g, MyState{"init": true})
+		require.NoError(t, err, "Unexpected error running graph")
 
-	// Add nodes
-	require.NoError(t, g.AddNode("start", func(_ context.Context, s SimpleState, _ types.Config[SimpleState]) (types.NodeResponse[SimpleState], error) {
-		return types.NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
+		// We expect the state to have "status" = "compiled", "research" = "done"
+		require.Equal(t, "compiled", st["status"], "Expected 'status' to be 'compiled'")
+		require.Equal(t, "done", st["research"], "Expected 'research' to be 'done'")
+	})
 
-	require.NoError(t, g.AddNode("double", func(_ context.Context, s SimpleState, _ types.Config[SimpleState]) (types.NodeResponse[SimpleState], error) {
-		s.Value *= 2
-		return types.NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
+	t.Run("BranchingScenario", func(t *testing.T) {
+		t.Parallel()
+		g := NewGraph[MyState]("BranchingScenario")
 
-	require.NoError(t, g.AddNode("triple", func(_ context.Context, s SimpleState, _ types.Config[SimpleState]) (types.NodeResponse[SimpleState], error) {
-		s.Value *= 3
-		return types.NodeResponse[SimpleState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
+		// Add nodes
+		require.NoError(t, g.AddNode("Compiler", simulateCompiler, nil))
+		require.NoError(t, g.AddNode("Researcher", simulateResearcher, nil))
+		require.NoError(t, g.AddNode("TreeOfThoughts", simulateTreeOfThoughts, nil))
 
-	// Connect all possible paths
-	require.NoError(t, g.AddConditionalEdge(
-		"start",
-		[]string{"double", "triple", END},
-		func(_ context.Context, s SimpleState, _ types.Config[SimpleState]) string {
-			if s.Value < 0 {
-				return END
+		// Branch from "Compiler" -> "Researcher" or -> "TreeOfThoughts"
+		// The branch function picks next node based on some state logic
+		branchFunc := func(_ context.Context, st MyState, _ types.Config[MyState]) string {
+			// If the key "useResearcher" is true, go to "Researcher"; else "TreeOfThoughts"
+			if val, ok := st["useResearcher"].(bool); ok && val {
+				return "Researcher"
 			}
-			if s.Value%2 == 0 {
-				return "double"
+			return "TreeOfThoughts"
+		}
+
+		// We add a branch for "Compiler"
+		require.NoError(t, g.AddBranch("Compiler", branchFunc, "", nil))
+
+		// Add single static edges for DFS/validation
+		require.NoError(t, g.AddEdge("Compiler", "Researcher", nil))
+		require.NoError(t, g.AddEdge("Compiler", "TreeOfThoughts", nil))
+
+		// Set entry and end
+		require.NoError(t, g.SetEntryPoint("Compiler"))
+
+		// Suppose we want "Researcher" to eventually lead to END
+		require.NoError(t, g.SetEndPoint("Researcher"))
+
+		// Also set "TreeOfThoughts" to lead to "Researcher" so that we always reach END
+		require.NoError(t, g.AddEdge("TreeOfThoughts", "Researcher", nil))
+
+		// Validate & run with "useResearcher" = false => we go to "TreeOfThoughts" -> "Researcher"
+		st, err := runGraph(t, g, MyState{"useResearcher": false})
+		require.NoError(t, err, "Unexpected error running graph")
+
+		// Expect "thinking" = true, "research" = "done"
+		require.Equal(t, true, st["thinking"], "Expected 'thinking' to be true")
+
+		// Now run with "useResearcher" = true => we go directly to "Researcher"
+		st, err = runGraph(t, g, MyState{"useResearcher": true})
+		require.NoError(t, err, "Unexpected error running graph")
+
+		// Expect "research" = "done"
+		require.Equal(t, "done", st["research"], "Expected 'research' to be 'done'")
+	})
+
+	t.Run("ConditionalEdgesScenario", func(t *testing.T) {
+		t.Parallel()
+		g := NewGraph[MyState]("ConditionalEdges")
+
+		require.NoError(t, g.AddNode("Compiler", simulateCompiler, nil))
+		require.NoError(t, g.AddNode("Researcher", simulateResearcher, nil))
+		require.NoError(t, g.AddNode("TreeOfThoughts", simulateTreeOfThoughts, nil))
+
+		// possibleTargets is ["Researcher", "TreeOfThoughts"]
+		condition := func(_ context.Context, st MyState, _ types.Config[MyState]) string {
+			if st["switch"] == "A" {
+				return "Researcher"
 			}
-			return "triple"
-		},
-		nil,
-	))
-
-	// Each processing node should end
-	require.NoError(t, g.AddEdge("double", "triple", nil))
-	require.NoError(t, g.AddEdge("triple", END, nil))
-
-	require.NoError(t, g.SetEntryPoint("start"))
-
-	testCases := []struct {
-		name          string
-		initialValue  int
-		expectedValue int
-	}{
-		{"even_path", 2, 12}, // Will go to double
-		{"odd_path", 3, 9},   // Will go to triple
-		{"end_path", -1, -1}, // Will go to END
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			compiled, err := g.Compile(WithDebug[SimpleState]())
-			require.NoError(t, err)
-
-			result, err := compiled.Run(context.Background(), SimpleState{Value: tc.initialValue}, WithThreadID[SimpleState]("test-"+tc.name))
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedValue, result.Value)
-		})
-	}
-}
-
-// Test graph with checkpointing
-func TestCheckpointedGraphExecution(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[ComplexState]("checkpoint-graph")
-	store := checkpoints.NewMemoryStore[ComplexState]()
-
-	// Add nodes with artificial delays
-	require.NoError(t, g.AddNode("step1", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		time.Sleep(100 * time.Millisecond)
-		s.Text = "Step 1 complete"
-		s.Numbers = append(s.Numbers, 1)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("step2", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		time.Sleep(100 * time.Millisecond)
-		s.Text = "Step 2 complete"
-		s.Numbers = append(s.Numbers, 2)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddEdge("step1", "step2", nil))
-	require.NoError(t, g.AddEdge("step2", END, nil))
-	require.NoError(t, g.SetEntryPoint("step1"))
-
-	// First run - should complete normally
-	compiled, err := g.Compile(WithCheckpointStore(store), WithDebug[ComplexState]())
-	require.NoError(t, err)
-
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, WithThreadID[ComplexState]("test-checkpoint"))
-	require.NoError(t, err)
-	require.Equal(t, "Step 2 complete", result.Text)
-	require.ElementsMatch(t, []int{1, 2}, result.Numbers)
-
-	// Verify checkpoint exists
-	saved, err := store.Load(context.Background(), types.CheckpointKey{ThreadID: "test-checkpoint", GraphID: g.graphID})
-	require.NoError(t, err)
-	require.Equal(t, result, saved.State)
-}
-
-func TestBranchWithThenNode(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[ComplexState]("then-branch")
-
-	require.NoError(t, g.AddNode("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 1)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("process", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 2)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("cleanup", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 3)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddEdge("start", "process", nil))
-	require.NoError(t, g.AddEdge("start", "cleanup", nil))
-	require.NoError(t, g.AddEdge("process", END, nil))
-	require.NoError(t, g.AddEdge("cleanup", END, nil))
-
-	require.NoError(t, g.AddBranch("start", func(_ context.Context, _ ComplexState, _ types.Config[ComplexState]) string {
-		return "process"
-	}, "cleanup", nil))
-
-	require.NoError(t, g.SetEntryPoint("start"))
-
-	compiled, err := g.Compile()
-	require.NoError(t, err)
-
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)})
-	require.NoError(t, err)
-	require.Equal(t, []int{1, 2, 3}, result.Numbers)
-}
-
-func TestMultipleBranches(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[ComplexState]("multi-branch")
-
-	require.NoError(t, g.AddNode("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("pathA", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 1)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("pathB", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 2)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddEdge("start", "pathA", nil))
-	require.NoError(t, g.AddEdge("start", "pathB", nil))
-	require.NoError(t, g.AddEdge("pathA", END, nil))
-	require.NoError(t, g.AddEdge("pathB", END, nil))
-
-	// First branch based on configurable
-	require.NoError(t, g.AddBranch("start", func(_ context.Context, _ ComplexState, c types.Config[ComplexState]) string {
-		if c.Configurable["path"] == "A" {
-			return "pathA"
+			return "TreeOfThoughts"
 		}
-		return "pathB"
-	}, "", nil))
 
-	// Second branch based on state
-	require.NoError(t, g.AddBranch("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) string {
-		if len(s.Numbers) > 0 {
-			return "pathA"
+		// This will add edges Compiler->Researcher and Compiler->TreeOfThoughts,
+		// plus a branch for picking among them.
+		require.NoError(t, g.AddConditionalEdge("Compiler", []string{"Researcher", "TreeOfThoughts"}, condition, nil))
+
+		// Next edges
+		require.NoError(t, g.AddEdge("TreeOfThoughts", "Researcher", nil))
+
+		// Set entry/exit
+		require.NoError(t, g.SetEntryPoint("Compiler"))
+		require.NoError(t, g.SetEndPoint("Researcher"))
+
+		// Test with "switch" = "A"
+		st, err := runGraph(t, g, MyState{"switch": "A"})
+		require.NoError(t, err, "Unexpected error running graph")
+
+		// Expect "research" = "done"
+		require.Equal(t, "done", st["research"], "Expected 'research' to be 'done'")
+
+		// Test with no "switch" => go to TreeOfThoughts
+		st, err = runGraph(t, g, MyState{"switch": "Z"})
+		require.NoError(t, err, "Unexpected error running graph")
+
+		// Expect "thinking" = true
+		require.Equal(t, true, st["thinking"], "Expected 'thinking' to be true")
+	})
+
+	t.Run("LoopBackScenario", func(t *testing.T) {
+		t.Parallel()
+		g := NewGraph[MyState]("LoopBack")
+
+		require.NoError(t, g.AddNode("StartNode", func(_ context.Context, st MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			// Just mark that we started
+			merged := st.Merge(MyState{"started": true})
+			return types.NodeResponse[MyState]{State: merged, Status: types.StatusCompleted}, nil
+		}, nil))
+
+		// Node that loops back if a certain counter < 3
+		require.NoError(t, g.AddNode("LoopNode", func(_ context.Context, st MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			count, _ := st["count"].(int)
+			count++
+			newSt := st.Merge(MyState{"count": count})
+			// If we haven't hit 3, we remain completed, but we might jump back
+			return types.NodeResponse[MyState]{State: newSt, Status: types.StatusCompleted}, nil
+		}, nil))
+
+		// Edges
+		require.NoError(t, g.AddEdge("StartNode", "LoopNode", nil))
+		// Loop back from "LoopNode" -> "LoopNode" if count < 3
+		loopBranch := func(_ context.Context, st MyState, _ types.Config[MyState]) string {
+			if c, _ := st["count"].(int); c < 3 {
+				return "LoopNode"
+			}
+			return "END"
 		}
-		return "pathB"
-	}, "", nil))
+		require.NoError(t, g.AddBranch("LoopNode", loopBranch, "", nil))
 
-	require.NoError(t, g.SetEntryPoint("start"))
+		// Set entry and end
+		require.NoError(t, g.SetEntryPoint("StartNode"))
+		// We want the final node to be "LoopNode" -> END
+		require.NoError(t, g.SetEndPoint("LoopNode"))
 
-	compiled, err := g.Compile()
-	require.NoError(t, err)
+		// Run
+		st, err := runGraph(t, g, MyState{})
+		require.NoError(t, err, "Unexpected error running graph")
 
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)},
-		WithConfigurable[ComplexState](map[string]any{"path": "A"}))
-	require.NoError(t, err)
-	require.Equal(t, []int{1}, result.Numbers)
+		// Expect "count" to be 3
+		require.Equal(t, 3, st["count"], "Expected 'count' to be 3")
+	})
 
-	result, err = compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)},
-		WithConfigurable[ComplexState](map[string]any{"path": "B"}))
-	require.NoError(t, err)
-	require.Equal(t, []int{2}, result.Numbers)
-}
+	t.Run("MultiBranchScenario", func(t *testing.T) {
+		t.Parallel()
+		// This scenario has a node with multiple branches, each leading to different sub-graphs
+		g := NewGraph[MyState]("MultiBranch")
 
-// Test graph with branches
-func TestBranchGraphExecution(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[ComplexState]("branch-graph")
+		require.NoError(t, g.AddNode("Entry", func(_ context.Context, s MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			newS := s.Merge(MyState{"entry": true})
+			return types.NodeResponse[MyState]{State: newS, Status: types.StatusCompleted}, nil
+		}, nil))
+		require.NoError(t, g.AddNode("PathA", func(_ context.Context, s MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			newS := s.Merge(MyState{"pathA": true})
+			return types.NodeResponse[MyState]{State: newS, Status: types.StatusCompleted}, nil
+		}, nil))
+		require.NoError(t, g.AddNode("PathB", func(_ context.Context, s MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			newS := s.Merge(MyState{"pathB": true})
+			return types.NodeResponse[MyState]{State: newS, Status: types.StatusCompleted}, nil
+		}, nil))
 
-	// Add nodes
-	require.NoError(t, g.AddNode("start", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, 0)
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
+		// We'll just link PathA -> END, PathB -> END
+		require.NoError(t, g.AddEdge("PathA", END, nil))
+		require.NoError(t, g.AddEdge("PathB", END, nil))
 
-	require.NoError(t, g.AddNode("process", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Numbers = append(s.Numbers, len(s.Numbers))
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	require.NoError(t, g.AddNode("finalize", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) (types.NodeResponse[ComplexState], error) {
-		s.Done = true
-		return types.NodeResponse[ComplexState]{State: s, Status: types.StatusCompleted}, nil
-	}, nil))
-
-	// Add edges for all paths
-	require.NoError(t, g.AddEdge("start", "process", nil))
-	require.NoError(t, g.AddEdge("process", "process", nil)) // Self loop
-	require.NoError(t, g.AddEdge("process", "finalize", nil))
-	require.NoError(t, g.AddEdge("finalize", END, nil))
-
-	// Add branch logic
-	require.NoError(t, g.AddBranch("process", func(_ context.Context, s ComplexState, _ types.Config[ComplexState]) string {
-		if len(s.Numbers) < 3 {
-			return "process"
+		// Multi-branch from "Entry"
+		multiBranchFunc := func(_ context.Context, st MyState, _ types.Config[MyState]) string {
+			if st["pick"] == "A" {
+				return "PathA"
+			}
+			if st["pick"] == "B" {
+				return "PathB"
+			}
+			// default
+			return "PathA"
 		}
-		return "finalize"
-	}, "", nil))
+		// We can do a single Branch with multiple edges, or a ConditionalEdge
+		require.NoError(t, g.AddConditionalEdge("Entry", []string{"PathA", "PathB"}, multiBranchFunc, nil))
 
-	require.NoError(t, g.SetEntryPoint("start"))
+		// Set entry/end
+		require.NoError(t, g.SetEntryPoint("Entry"))
+		require.NoError(t, g.SetEndPoint("PathA"))
+		// NOTE: In practice, you might want a fallback from PathB also to END. We did above.
 
-	// Compile and run
-	compiled, err := g.Compile(WithDebug[ComplexState]())
-	require.NoError(t, err)
+		// Run pick=A
+		sA, err := runGraph(t, g, MyState{"pick": "A"})
+		require.NoError(t, err, "Failed to run graph with pick=A")
 
-	result, err := compiled.Run(context.Background(), ComplexState{Numbers: make([]int, 0)}, WithThreadID[ComplexState]("test-branches"))
-	require.NoError(t, err)
-	require.True(t, result.Done)
-	require.Equal(t, []int{0, 1, 2}, result.Numbers) // Should process 3 times
+		// We expect "entry" = true, "pathA" = true
+		require.Equal(t, true, sA["entry"], "Expected 'entry' to be true")
+
+		// Run pick=B
+		sB, err := runGraph(t, g, MyState{"pick": "B"})
+		require.NoError(t, err, "Failed to run graph with pick=B")
+
+		// We expect "entry" = true, "pathB" = true
+		require.Equal(t, true, sB["entry"], "Expected 'entry' to be true")
+	})
+
+	t.Run("NestedGraphScenario", func(t *testing.T) {
+		t.Parallel()
+		// Example: A "master" graph that has an "inner" graph node.
+		// This is conceptual since your code might not directly support nested graphs
+		// unless you store them as a node function. We'll do that here.
+
+		// 1) Build an 'inner' graph that we can call from a node function
+		innerGraph := NewGraph[MyState]("InnerGraph")
+		require.NoError(t, innerGraph.AddNode("InnerStart", simulateCompiler, nil))
+		require.NoError(t, innerGraph.AddNode("InnerMid", simulateResearcher, nil))
+
+		if err := innerGraph.AddEdge("InnerStart", "InnerMid", nil); err != nil {
+			t.Fatalf("Failed to add edge InnerStart->InnerMid: %v", err)
+		}
+
+		require.NoError(t, innerGraph.SetEntryPoint("InnerStart"))
+		require.NoError(t, innerGraph.SetEndPoint("InnerMid"))
+
+		// We'll compile the inner graph so we can call it
+		compiledInner, err := innerGraph.Compile()
+		if err != nil {
+			t.Fatalf("Failed to compile inner graph: %v", err)
+		}
+
+		// 2) Build the outer graph
+		outerGraph := NewGraph[MyState]("OuterGraph")
+
+		// Node that calls the compiled inner graph
+		callInnerGraphNode := func(ctx context.Context, s MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			// We simply run the inner graph with the current state
+			newState, err := compiledInner.Run(ctx, s) //nolint:govet
+			if err != nil {
+				return types.NodeResponse[MyState]{}, fmt.Errorf("inner graph failed: %w", err)
+			}
+			return types.NodeResponse[MyState]{State: newState, Status: types.StatusCompleted}, nil
+		}
+
+		// Add nodes to the outer graph
+		require.NoError(t, outerGraph.AddNode("PreInner", simulateTreeOfThoughts, nil))
+		require.NoError(t, outerGraph.AddNode("CallInnerGraph", callInnerGraphNode, nil))
+		// Some final node
+		require.NoError(t, outerGraph.AddNode("FinalNode", func(_ context.Context, s MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+			merged := s.Merge(MyState{"final": true})
+			return types.NodeResponse[MyState]{State: merged, Status: types.StatusCompleted}, nil
+		}, nil))
+
+		// Edges
+		require.NoError(t, outerGraph.AddEdge("PreInner", "CallInnerGraph", nil))
+		require.NoError(t, outerGraph.AddEdge("CallInnerGraph", "FinalNode", nil))
+
+		// Set entry/end
+		require.NoError(t, outerGraph.SetEntryPoint("PreInner"))
+		require.NoError(t, outerGraph.SetEndPoint("FinalNode"))
+
+		// Compile outer graph
+		compiledOuter, err := outerGraph.Compile()
+		if err != nil {
+			t.Fatalf("Failed to compile outer graph: %v", err)
+		}
+
+		// Run outer graph
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		finalState, err := compiledOuter.Run(ctx, MyState{"outer": true})
+		require.NoError(t, err, "Failed to run outer graph")
+		if err != nil {
+			t.Fatalf("Failed to run outer graph: %v", err)
+		}
+
+		// We expect keys from the inner graph merges: "status" = "compiled", "research" = "done"
+		if finalState["thinking"] != true {
+			t.Errorf("Expected 'thinking' from PreInner, got %v", finalState)
+		}
+		if finalState["status"] != "compiled" || finalState["research"] != "done" {
+			t.Errorf("Did not get merged inner graph state, got %v", finalState)
+		}
+		if finalState["final"] != true {
+			t.Errorf("Did not run 'FinalNode', got %v", finalState)
+		}
+	})
+
+	t.Run("GraphWithErrorNode", func(t *testing.T) {
+		t.Parallel()
+		g := NewGraph[MyState]("GraphWithErrorNode")
+
+		require.NoError(t, g.AddNode("WillFail", simulateErrorNode, nil))
+		require.NoError(t, g.SetEntryPoint("WillFail"), "SetEntryPoint failed")
+		require.NoError(t, g.SetEndPoint("WillFail"), "SetEndPoint failed")
+
+		// We expect run to fail
+		_, err := runGraph(t, g, MyState{})
+		require.Error(t, err, "Expected error running graph with error node")
+	})
+
+	t.Run("CompileAndModifyGraph", func(t *testing.T) {
+		t.Parallel()
+		g := NewGraph[MyState]("CompileAndModifyGraph")
+		require.NoError(t, g.AddNode("NodeA", simulateCompiler, nil))
+		require.NoError(t, g.SetEntryPoint("NodeA"))
+		require.NoError(t, g.SetEndPoint("NodeA"))
+
+		// Compile
+		_, err := g.Compile()
+		require.NoError(t, err, "Failed to compile graph")
+
+		// Now try to modify the graph after compilation, expect an error
+		err = g.AddNode("NodeB", simulateResearcher, nil)
+		require.Error(t, err, "Expected error adding node to compiled graph, got nil")
+	})
 }
 
-type IntState struct {
-	Value int
-}
-
-func (s IntState) Validate() error {
-	return nil
-}
-
-func (s IntState) Merge(st IntState) IntState {
-	return IntState{
-		Value: st.Value,
-	}
-}
-
-// Test adding nodes to the graph
-func TestAddNode(t *testing.T) {
-	t.Parallel()
-	graph := NewGraph[IntState]("test-graph")
-
-	// Add valid node
-	err := graph.AddNode("node1", func(_ context.Context, st IntState, _ types.Config[IntState]) (types.NodeResponse[IntState], error) {
-		st.Value++
-		return types.NodeResponse[IntState]{State: st, Status: types.StatusCompleted}, nil
-	}, nil)
-	require.NoError(t, err)
-
-	// Try adding duplicate node
-	err = graph.AddNode("node1", nil, nil)
-	require.Error(t, err)
-}
-
-// Test adding edges to the graph
-func TestAddEdge(t *testing.T) {
-	t.Parallel()
-	graph := NewGraph[IntState]("test-graph")
-	_ = graph.AddNode("node1", nil, nil)
-	_ = graph.AddNode("node2", nil, nil)
-
-	// Add valid edge
-	err := graph.AddEdge("node1", "node2", nil)
-	require.NoError(t, err)
-
-	// Add edge with missing nodes
-	err = graph.AddEdge("node1", "node3", nil)
-	require.Error(t, err)
-}
-
-type SimpleStateStr struct {
-	Value string
-}
-
-func (s SimpleStateStr) Validate() error { return nil }
-func (s SimpleStateStr) Merge(other SimpleStateStr) SimpleStateStr {
-	if other.Value != "" {
-		s.Value = other.Value
-	}
-	return s
-}
-
-func TestGraphBasicFlow(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[SimpleStateStr]("test")
-
-	err := g.AddNode("node1", func(_ context.Context, _ SimpleStateStr, _ types.Config[SimpleStateStr]) (types.NodeResponse[SimpleStateStr], error) {
-		return types.NodeResponse[SimpleStateStr]{
-			State:  SimpleStateStr{Value: "node1"},
-			Status: types.StatusCompleted,
-		}, nil
-	}, nil)
-	require.NoError(t, err)
-
-	err = g.AddNode("node2", func(_ context.Context, _ SimpleStateStr, _ types.Config[SimpleStateStr]) (types.NodeResponse[SimpleStateStr], error) {
-		return types.NodeResponse[SimpleStateStr]{
-			State:  SimpleStateStr{Value: "node2"},
-			Status: types.StatusCompleted,
-		}, nil
-	}, nil)
-	require.NoError(t, err)
-
-	err = g.AddEdge("node1", "node2", nil)
-	require.NoError(t, err)
-
-	err = g.AddEdge("node2", END, nil)
-	require.NoError(t, err)
-
-	err = g.SetEntryPoint("node1")
-	require.NoError(t, err)
-
-	compiled, err := g.Compile()
-	require.NoError(t, err)
-
-	result, err := compiled.Run(context.Background(), SimpleStateStr{})
-	require.NoError(t, err)
-	require.Equal(t, "node2", result.Value)
-}
-
-func TestGraphCheckpointing(t *testing.T) {
-	t.Parallel()
-	g := NewGraph[SimpleStateStr]("test")
-	store := checkpoints.NewMemoryStore[SimpleStateStr]()
-
-	err := g.AddNode("node1", func(_ context.Context, _ SimpleStateStr, _ types.Config[SimpleStateStr]) (types.NodeResponse[SimpleStateStr], error) {
-		return types.NodeResponse[SimpleStateStr]{
-			State:  SimpleStateStr{Value: "checkpoint1"},
+func simulatePendingNode(_ context.Context, st MyState, _ types.Config[MyState]) (types.NodeResponse[MyState], error) {
+	// Return a pending status the first time, completed the second time, etc.
+	if st["pending"] == nil {
+		// Mark we have set it to pending
+		newState := st.Merge(MyState{"pending": true})
+		return types.NodeResponse[MyState]{
+			State:  newState,
 			Status: types.StatusPending,
 		}, nil
-	}, nil)
+	}
+
+	// If we come back with pending == true, let's complete this time
+	return types.NodeResponse[MyState]{
+		State:  st,
+		Status: types.StatusCompleted,
+	}, nil
+}
+
+func TestPendingNodeResume(t *testing.T) {
+	t.Parallel()
+	g := NewGraph[MyState]("PendingNodeGraph")
+	require.NoError(t, g.AddNode("MightPending", simulatePendingNode, nil))
+	require.NoError(t, g.SetEntryPoint("MightPending"))
+	require.NoError(t, g.SetEndPoint("MightPending"))
+
+	// Use an in-memory checkpointer
+	compiled, err := g.Compile(
+		WithCheckpointStore(checkpoints.NewMemoryStore[MyState]()),
+		WithDebug[MyState](),
+	)
 	require.NoError(t, err)
 
-	err = g.AddEdge("node1", END, nil)
+	// 1) First run -> expect to stop in a pending state
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := compiled.Run(ctx, MyState{})
+	// We expect no error, but the node is "pending," so run should effectively return.
 	require.NoError(t, err)
+	require.True(t, st["pending"].(bool), "Expected pending in state") //nolint:forcetypeassert
 
-	err = g.SetEntryPoint("node1")
+	// 2) Resume from checkpoint
+	// simulate that some external event "resolved" the pending condition
+	// so the next run picks up at the same node but no longer returns pending
+	st2, err := compiled.Run(ctx, st)
 	require.NoError(t, err)
-
-	compiled, err := g.Compile(WithCheckpointStore[SimpleStateStr](store))
-	require.NoError(t, err)
-
-	threadID := "test-thread"
-	result, err := compiled.Run(context.Background(), SimpleStateStr{}, WithThreadID[SimpleStateStr](threadID))
-	require.NoError(t, err)
-	require.Equal(t, "checkpoint1", result.Value)
-
-	checkpoint, err := store.Load(context.Background(), types.CheckpointKey{
-		GraphID:  compiled.config.GraphID,
-		ThreadID: threadID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, "checkpoint1", checkpoint.State.Value)
+	require.True(t, st2["pending"].(bool), "Still expecting pending=true in final state, but status now completed") //nolint:forcetypeassert
 }

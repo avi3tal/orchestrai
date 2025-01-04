@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/avi3tal/orchestrai/pkg/state"
@@ -16,6 +17,10 @@ type CompiledGraph[T state.GraphState[T]] struct {
 
 // Compile validates and compiles the graph for execution
 func (g *Graph[T]) Compile(opt ...CompilationOption[T]) (*CompiledGraph[T], error) {
+	if g.entryPoint == "" {
+		return nil, errors.New("entry point not set")
+	}
+
 	// Validate the graph before compiling
 	if err := g.Validate(); err != nil {
 		return nil, fmt.Errorf("graph validation failed: %w", err)
