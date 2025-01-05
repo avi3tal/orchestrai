@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-
 	"github.com/avi3tal/orchestrai/pkg/agents"
 	"github.com/avi3tal/orchestrai/pkg/types"
 	"github.com/avi3tal/orchestrai/pkg/workflow"
@@ -19,10 +18,10 @@ type ReviewState struct {
 func (rs ReviewState) Validate() error { return nil }
 func (rs ReviewState) Merge(other ReviewState) ReviewState {
 	if other.Content != "" {
-		rs.Content = other.Content
+		rs.Content += other.Content
 	}
-	rs.NeedsReview = rs.NeedsReview || other.NeedsReview
-	rs.Approved = rs.Approved || other.Approved
+	rs.NeedsReview = other.NeedsReview
+	rs.Approved = other.Approved
 	return rs
 }
 

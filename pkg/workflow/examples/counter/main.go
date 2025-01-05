@@ -68,7 +68,7 @@ func main() {
 
 	// Build chain:
 	//  1) AddAgent(incrAgent) as entry
-	//  2) LoopWhile(Value < 5)
+	//  2) ThenIf(Value < 5)
 	//  3) Then(printAgent)
 	//  4) End()
 	// Meaning: "Incrementer" loops to itself while Value < 5, else it proceeds to "Printer"

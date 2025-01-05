@@ -7,4 +7,5 @@ const (
 	StatusCompleted NodeExecutionStatus = "completed"
 	StatusPending   NodeExecutionStatus = "pending" // Waiting for user input
 	StatusReady     NodeExecutionStatus = "ready"   // Ready to execute
+	StatusFailed    NodeExecutionStatus = "failed"
 )
