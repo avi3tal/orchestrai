@@ -299,6 +299,8 @@ func (fa *FlowAgent[T]) OnCondition(
 	if err != nil {
 		fa.err = fmt.Errorf("OnCondition failed: %w", err)
 	}
+
+	fa.branchTargets = targets
 	return fa
 }
 
